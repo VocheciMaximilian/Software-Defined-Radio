@@ -6,7 +6,7 @@ class ReceiverConfig:
     center_frequency: float = 100_000_000
     sample_rate: float = 2_400_000
     gain: float | str = "auto"
-    block_size: int = 16_384
+    block_size: int = 65_536
 
     def validate(self):
         if self.center_frequency <= 0:

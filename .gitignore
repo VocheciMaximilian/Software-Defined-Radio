@@ -3,6 +3,11 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# Local SDR driver/runtime artifacts
+.tmp-rtlsdr-driver/
+dll/
+sdr_error.log
+
 # C extensions
 *.so
 

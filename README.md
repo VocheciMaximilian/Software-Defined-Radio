@@ -120,7 +120,12 @@ Contine coordonarea fluxului SDR.
 Contine configurarea implicita si configurarea curenta a aplicatiei.
 
 ### 4.8. `Frontend`
-Contine scheletul pentru interfata grafica: fereastra principala, panou de control, spectru si waterfall.
+Contine interfata grafica desktop inspirata de aplicatii SDR clasice precum SDRSharp.
+
+- `Main_window.py` - fereastra principala, layout-ul general, pornirea si oprirea pipeline-ului;
+- `Controls_panel.py` - panou lateral pentru frecventa, sample rate, gain, mod AM/FM, FFT si audio;
+- `Spectrum_view.py` - grafic de spectru realizat cu `pyqtgraph`;
+- `Waterfall_view.py` - afisare waterfall pe baza frame-urilor de spectru normalizate.
 
 ## 5. Fluxul aplicatiei
 ```text
@@ -190,7 +195,17 @@ Aplicatia se ruleaza din radacina proiectului, dupa activarea mediului virtual:
 python App.py
 ```
 
-Entrypoint-ul creeaza un `RtlSdrReceiver`, un `AudioOutput` si un `SDRPipeline`, apoi proceseaza un frame. Interfata grafica urmeaza sa fie conectata peste acelasi pipeline.
+Entrypoint-ul porneste interfata grafica si conecteaza controalele la backend-ul SDR. Frontend-ul nu instantiaza receiver-ul si nu cunoaste pipeline-ul; el doar emite setarile selectate si afiseaza frame-urile primite.
+
+Interfata permite:
+- pornirea si oprirea pipeline-ului;
+- selectarea frecventei centrale;
+- selectarea ratei de esantionare;
+- configurarea gain-ului manual sau automat;
+- alegerea modului de demodulare AM/FM;
+- modificarea dimensiunii FFT;
+- activarea iesirii audio;
+- vizualizarea spectrului si waterfall-ului in timp real.
 
 ## 10. Functionalitati implementate
 - Modele de date pentru blocuri IQ, audio si spectru.
@@ -204,6 +219,7 @@ Entrypoint-ul creeaza un `RtlSdrReceiver`, un `AudioOutput` si un `SDRPipeline`,
 - Implementare RTL-SDR.
 - Iesire audio prin `sounddevice`.
 - Pipeline SDR pentru procesarea unui frame complet.
+- Interfata grafica desktop cu panou de control, spectrum view si waterfall view.
 
 ## 11. Testare
 In prezent, proiectul nu include o suita de teste automate.

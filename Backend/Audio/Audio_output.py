@@ -5,6 +5,7 @@ class AudioOutput:
     def __init__(self, sample_rate=48_000):
         self.sample_rate = float(sample_rate)
         self._sounddevice = None
+        self._stream = None
 
     def open(self):
         try:
@@ -13,10 +14,17 @@ class AudioOutput:
             raise RuntimeError("sounddevice is not installed or cannot be imported.") from exc
 
         self._sounddevice = sd
+        self._stream = sd.OutputStream(
+            samplerate=int(self.sample_rate),
+            channels=1,
+            dtype="float32",
+            blocksize=0,
+        )
+        self._stream.start()
         return self
 
     def play(self, samples):
-        if self._sounddevice is None:
+        if self._stream is None:
             self.open()
 
         audio = np.asarray(samples, dtype=np.float32)
@@ -24,9 +32,13 @@ class AudioOutput:
         if audio.size == 0:
             return
 
-        self._sounddevice.play(audio, samplerate=int(self.sample_rate), blocking=False)
+        audio = np.clip(audio, -1.0, 1.0).reshape(-1, 1)
+        self._stream.write(audio)
 
     def close(self):
-        if self._sounddevice is not None:
-            self._sounddevice.stop()
-            self._sounddevice = None
+        if self._stream is not None:
+            self._stream.stop()
+            self._stream.close()
+            self._stream = None
+
+        self._sounddevice = None

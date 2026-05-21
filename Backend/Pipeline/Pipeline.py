@@ -1,6 +1,8 @@
 from Backend.Demodulare.Am import demodulate_am
 from Backend.Demodulare.Fm import demodulate_fm
+from Backend.Dsp.Filters import normalize_rms, remove_dc
 from Backend.Dsp.Fft import normalize_spectrum, power_spectrum_db
+from Backend.Dsp.Resampling import resample_to_rate
 from Backend.Pipeline.Events import PipelineFrame
 from Backend.Signal.Models import AudioBlock, SpectrumFrame
 
@@ -32,7 +34,14 @@ class SDRPipeline:
     def process_once(self):
         iq_block = self.receiver.read_block()
         demodulator = DEMODULATORS[self.demodulation_mode]
-        audio_samples = demodulator(iq_block.samples)
+        demodulated = demodulator(iq_block.samples)
+        audio_samples = resample_to_rate(
+            demodulated,
+            iq_block.sample_rate,
+            self.audio_sample_rate,
+        )
+        audio_samples = normalize_rms(remove_dc(audio_samples))
+        audio_samples = audio_samples.astype("float32")
         audio_block = AudioBlock.create(audio_samples, self.audio_sample_rate)
 
         power_db = power_spectrum_db(iq_block.samples, self.fft_size)
