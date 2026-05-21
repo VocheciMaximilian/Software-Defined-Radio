@@ -1,14 +1,30 @@
 ## Software-Defined Radio - Receptor SDR in Python
-Un sistem software pentru receptia si procesarea semnalelor radio folosind un dongle RTL-SDR si Python. Scopul aplicatiei este sa permita captarea semnalelor IQ, procesarea digitala a acestora, demodularea AM/FM si afisarea spectrului radio intr-o interfata grafica.
+Un sistem software pentru receptia si procesarea semnalelor radio folosind un dongle RTL-SDR si Python. Scopul aplicatiei este sa ofere o arhitectura clara pentru captarea semnalelor IQ, procesarea digitala, demodularea AM/FM, redarea audio si afisarea spectrului radio.
 
-Aplicatia foloseste `pyrtlsdr` pentru comunicarea cu dispozitivul RTL-SDR, `numpy` si `scipy` pentru procesarea digitala a semnalului, `sounddevice` pentru redarea audio, iar interfata grafica este realizata cu `PySide6` si `pyqtgraph`.
+Aplicatia foloseste `pyrtlsdr` pentru comunicarea cu dispozitivul RTL-SDR, `numpy` si `scipy` pentru procesarea digitala a semnalului, `sounddevice` pentru redarea audio, iar interfata grafica este pregatita pentru `PySide6` si `pyqtgraph`.
 
 ## 1. Obiectivul proiectului
-Obiectivul proiectului este realizarea unui receptor SDR care poate prelua esantioane IQ de la un dispozitiv RTL-SDR si le poate procesa in timp real.
+Obiectivul proiectului este realizarea unui receptor SDR modular, in care fiecare componenta are o responsabilitate separata:
+- receptorul citeste blocuri IQ;
+- modulele DSP proceseaza semnalul prin functii pure;
+- demodulatoarele extrag semnalul audio;
+- pipeline-ul coordoneaza fluxul de date;
+- frontend-ul afiseaza controalele, spectrul si waterfall-ul.
 
-Aplicatia urmareste sa ofere un flux complet de lucru pentru receptie radio: configurarea frecventei, captarea semnalului, filtrarea si resampling-ul datelor, demodularea semnalului si afisarea informatiilor relevante in interfata grafica.
+Aceasta separare permite testarea mai usoara a fiecarei parti si extinderea proiectului cu moduri noi de demodulare sau surse diferite de semnal.
 
 ## 2. Teoria lucrarii
+Aceasta sectiune va fi completata ulterior.
+
+Subiecte care pot fi incluse:
+- principiul de functionare al unui sistem Software-Defined Radio;
+- reprezentarea semnalelor IQ;
+- esantionarea si rata de esantionare;
+- spectrul de frecvente si transformata Fourier;
+- filtrarea digitala a semnalelor;
+- demodularea AM si FM;
+- rolul resampling-ului in lantul de procesare;
+- particularitati ale dispozitivelor RTL-SDR.
 
 ## 3. Structura proiectului
 ```text
@@ -23,11 +39,13 @@ Software-Defined-Radio/
 |   |
 |   |-- Demodulare/
 |   |   |-- Am.py
-|   |   `-- Fm.py
+|   |   |-- Fm.py
+|   |   `-- Modulation.py
 |   |
 |   |-- Dsp/
 |   |   |-- Fft.py
 |   |   |-- Filters.py
+|   |   |-- Frequency.py
 |   |   |-- Resampling.py
 |   |   `-- Windowing.py
 |   |
@@ -56,62 +74,74 @@ Software-Defined-Radio/
 ```
 
 ## 4. Rolul modulelor
-### 4.1. `App.py`
-Reprezinta punctul principal de pornire al aplicatiei. Acest fisier va initializa configurarea, backend-ul de procesare si interfata grafica.
+### 4.1. `Backend/Signal`
+Contine modelele de date folosite intre componente.
 
-### 4.2. `Backend/Receiver`
-Contine componentele responsabile de comunicarea cu receptorul radio.
+- `IQBlock` - bloc de esantioane complexe IQ, impreuna cu sample rate, frecventa centrala si timestamp;
+- `AudioBlock` - bloc de esantioane audio normalizate;
+- `SpectrumFrame` - frame de spectru folosit pentru afisare;
+- `SampleBuffer` - buffer simplu pentru pastrarea ultimelor blocuri de esantioane.
 
-- `Base.py` - defineste interfata comuna pentru receptoare;
-- `Config.py` - contine structurile de configurare pentru frecventa, gain si rata de esantionare;
-- `Rtl_sdr_receiver.py` - implementeaza receptia datelor IQ printr-un dongle RTL-SDR.
+### 4.2. `Backend/Dsp`
+Contine functii pure de procesare digitala a semnalului. Aceste functii nu modifica starea aplicatiei si primesc datele explicit ca parametri.
 
-### 4.3. `Backend/Signal`
-Contine modelele si bufferele folosite pentru transportul datelor intre etapele aplicatiei.
+- `Fft.py` - putere, spectru in dB, normalizare spectru si spectrograma;
+- `Filters.py` - moving average, eliminare DC si normalizare RMS;
+- `Frequency.py` - axa de frecvente, estimare de banda ocupata si shift de frecventa;
+- `Resampling.py` - calcul factor de decimare si decimare;
+- `Windowing.py` - ferestre Hann pentru analiza spectrala.
 
-- `Models.py` - defineste reprezentarea blocurilor de semnal;
-- `Buffers.py` - gestioneaza stocarea temporara a esantioanelor procesate.
+### 4.3. `Backend/Demodulare`
+Contine logica de modulare si demodulare.
 
-### 4.4. `Backend/Dsp`
-Contine operatiile de procesare digitala a semnalului.
+- `Am.py` - demodulare AM prin detectie de anvelopa;
+- `Fm.py` - demodulare FM prin diferenta de faza intre esantioane consecutive;
+- `Modulation.py` - modulare AM pentru semnale generate software.
 
-- `Fft.py` - calculeaza spectrul semnalului folosind transformata Fourier;
-- `Filters.py` - contine filtre digitale pentru izolarea benzii utile;
-- `Resampling.py` - adapteaza rata de esantionare pentru etapele urmatoare;
-- `Windowing.py` - aplica functii de fereastra pentru analiza spectrala.
+### 4.4. `Backend/Receiver`
+Contine contractul pentru receptoare si implementarea pentru RTL-SDR.
 
-### 4.5. `Backend/Demodulare`
-Contine modulele pentru extragerea informatiei utile din semnalul radio.
+- `ReceiverConfig` - frecventa centrala, sample rate, gain si block size;
+- `Receiver` - clasa abstracta pentru orice sursa IQ;
+- `RtlSdrReceiver` - implementarea concreta pentru dongle RTL-SDR.
 
-- `am.py` - demodulare pentru semnale AM;
-- `fm.py` - demodulare pentru semnale FM.
+### 4.5. `Backend/Audio`
+Contine iesirea audio.
 
-### 4.6. `Backend/Audio`
-Contine logica pentru redarea semnalului audio rezultat dupa demodulare.
+- `AudioOutput` - trimite esantioanele audio catre placa de sunet folosind `sounddevice`.
 
-- `Audio_output.py` - trimite esantioanele audio catre placa de sunet prin `sounddevice`.
+### 4.6. `Backend/Pipeline`
+Contine coordonarea fluxului SDR.
 
-### 4.7. `Backend/Pipeline`
-Contine lantul principal de procesare si evenimentele interne ale aplicatiei.
+- `PipelineFrame` - rezultatul unei iteratii: IQ, audio si spectru;
+- `SDRPipeline` - citeste din receiver, demoduleaza, calculeaza spectrul si trimite audio la iesire.
 
-- `Pipeline.py` - coordoneaza receptia, procesarea, demodularea si iesirea audio;
-- `Events.py` - defineste evenimentele transmise intre backend si interfata.
-
-### 4.8. `Config`
+### 4.7. `Config`
 Contine configurarea implicita si configurarea curenta a aplicatiei.
 
-- `Defaults.py` - valori implicite pentru frecventa, sample rate, gain si mod de demodulare;
-- `Current.py` - configurarea folosita la rulare.
+### 4.8. `Frontend`
+Contine scheletul pentru interfata grafica: fereastra principala, panou de control, spectru si waterfall.
 
-### 4.9. `Frontend`
-Contine interfata grafica a aplicatiei.
+## 5. Fluxul aplicatiei
+```text
+RTL-SDR
+   |
+   v
+RtlSdrReceiver
+   |
+   v
+IQBlock
+   |
+   v
+SDRPipeline
+   |-- demodulare AM/FM -> AudioBlock -> AudioOutput
+   |
+   `-- FFT + normalizare -> SpectrumFrame -> Spectrum/Waterfall UI
+```
 
-- `Main_window.py` - fereastra principala;
-- `Controls_panel.py` - controalele pentru frecventa, gain, mod de demodulare si volum;
-- `Spectrum_view.py` - afisarea spectrului de frecventa;
-- `Waterfall_view.py` - afisarea evolutiei spectrului in timp.
+Pipeline-ul este singurul strat care leaga componentele intre ele. Modulele DSP raman independente si pot fi testate separat cu semnale generate artificial.
 
-## 5. Dependente
+## 6. Dependente
 Dependentele proiectului sunt definite in `requirements.txt`:
 
 ```text
@@ -123,15 +153,7 @@ PySide6
 pyqtgraph
 ```
 
-Rolul principal al dependentelor:
-- `numpy` - operatii pe vectori si esantioane numerice;
-- `scipy` - functii pentru filtrare, resampling si procesare de semnal;
-- `pyrtlsdr` - interfata Python pentru dispozitive RTL-SDR;
-- `sounddevice` - redarea semnalului audio;
-- `PySide6` - interfata grafica desktop;
-- `pyqtgraph` - grafice rapide pentru spectru si waterfall.
-
-## 6. Setup Python
+## 7. Setup Python
 Creare mediu virtual:
 
 ```powershell
@@ -150,14 +172,44 @@ Instalare dependente:
 python -m pip install -r requirements.txt
 ```
 
-## 7. Configurare RTL-SDR
+## 8. Configurare RTL-SDR
 Pentru rularea aplicatiei cu un dongle RTL-SDR este necesara instalarea driverelor potrivite pentru sistemul de operare.
 
 Pe Windows, dispozitivul trebuie configurat astfel incat sa poata fi accesat de libraria RTL-SDR. In mod obisnuit, acest lucru presupune instalarea driverului `WinUSB` pentru dispozitivul RTL-SDR.
 
-Setarile importante pentru receptie sunt:
-- frecventa centrala;
-- rata de esantionare;
-- gain-ul receptorului;
-- modul de demodulare;
-- latimea de banda procesata.
+Setarile importante sunt definite prin `ReceiverConfig`:
+- `center_frequency`;
+- `sample_rate`;
+- `gain`;
+- `block_size`.
+
+## 9. Rulare
+Aplicatia se ruleaza din radacina proiectului, dupa activarea mediului virtual:
+
+```powershell
+python App.py
+```
+
+Entrypoint-ul creeaza un `RtlSdrReceiver`, un `AudioOutput` si un `SDRPipeline`, apoi proceseaza un frame. Interfata grafica urmeaza sa fie conectata peste acelasi pipeline.
+
+## 10. Functionalitati implementate
+- Modele de date pentru blocuri IQ, audio si spectru.
+- Functii pure pentru FFT, putere, normalizare spectru si spectrograma.
+- Functii pure pentru eliminare DC, moving average si normalizare RMS.
+- Estimare de banda ocupata si shift de frecventa.
+- Demodulare AM.
+- Demodulare FM.
+- Modulare AM.
+- Contract abstract pentru receptoare.
+- Implementare RTL-SDR.
+- Iesire audio prin `sounddevice`.
+- Pipeline SDR pentru procesarea unui frame complet.
+
+## 11. Testare
+In prezent, proiectul nu include o suita de teste automate.
+
+Verificarea manuala recomandata:
+- rularea verificarii de sintaxa pentru fisierele Python;
+- testarea functiilor DSP cu semnale generate artificial;
+- conectarea dongle-ului RTL-SDR si rularea `python App.py`;
+- verificarea frame-ului audio si a frame-ului de spectru produse de pipeline.
