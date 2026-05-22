@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 
-from Backend.Receiver.Config import ReceiverConfig
-from Backend.Signal.Models import IQBlock
+from backend.receiver.config import ReceiverConfig
+from backend.signal.models import IQBlock
 
 
 class Receiver(ABC):

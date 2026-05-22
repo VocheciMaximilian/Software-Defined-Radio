@@ -1,7 +1,7 @@
 import numpy as np
 
-from Backend.Dsp.Fft import power
-from Backend.Dsp.Filters import lowpass_moving_avg
+from backend.dsp.fft import power
+from backend.dsp.filters import lowpass_moving_avg
 
 
 def frequency_axis(sample_count, sample_rate):

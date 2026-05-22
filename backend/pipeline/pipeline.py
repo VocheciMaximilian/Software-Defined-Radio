@@ -1,10 +1,10 @@
-from Backend.Demodulare.Am import demodulate_am
-from Backend.Demodulare.Fm import demodulate_fm
-from Backend.Dsp.Filters import normalize_rms, remove_dc
-from Backend.Dsp.Fft import normalize_spectrum, power_spectrum_db
-from Backend.Dsp.Resampling import resample_to_rate
-from Backend.Pipeline.Events import PipelineFrame
-from Backend.Signal.Models import AudioBlock, SpectrumFrame
+from backend.demodulare.am import demodulate_am
+from backend.demodulare.fm import demodulate_fm
+from backend.dsp.filters import normalize_rms, remove_dc
+from backend.dsp.fft import normalize_spectrum, power_spectrum_db
+from backend.dsp.resampling import resample_to_rate
+from backend.pipeline.events import PipelineFrame
+from backend.signal.models import AudioBlock, SpectrumFrame
 
 
 DEMODULATORS = {

@@ -6,8 +6,8 @@ from ctypes.util import find_library
 
 import numpy as np
 
-from Backend.Receiver.Base import Receiver
-from Backend.Signal.Models import IQBlock
+from backend.receiver.base import Receiver
+from backend.signal.models import IQBlock
 
 
 class RtlSdrLibrary:

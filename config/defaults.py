@@ -1,4 +1,4 @@
-from Backend.Receiver.Config import ReceiverConfig
+from backend.receiver.config import ReceiverConfig
 
 
 DEFAULT_RECEIVER_CONFIG = ReceiverConfig(

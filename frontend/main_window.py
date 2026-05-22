@@ -10,9 +10,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from Frontend.Controls_panel import ControlsPanel
-from Frontend.Spectrum_view import SpectrumView
-from Frontend.Waterfall_view import WaterfallView
+from frontend.controls_panel import ControlsPanel
+from frontend.spectrum_view import SpectrumView
+from frontend.waterfall_view import WaterfallView
 
 
 class MainWindow(QMainWindow):

@@ -1,11 +1,11 @@
 from dataclasses import dataclass, field
 
-from Config.Defaults import (
+from config.defaults import (
     DEFAULT_AUDIO_SAMPLE_RATE,
     DEFAULT_DEMODULATION_MODE,
     DEFAULT_FFT_SIZE,
 )
-from Backend.Receiver.Config import ReceiverConfig
+from backend.receiver.config import ReceiverConfig
 
 
 @dataclass

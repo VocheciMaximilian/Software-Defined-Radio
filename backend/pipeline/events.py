@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from Backend.Signal.Models import AudioBlock, IQBlock, SpectrumFrame
+from backend.signal.models import AudioBlock, IQBlock, SpectrumFrame
 
 
 @dataclass(frozen=True)

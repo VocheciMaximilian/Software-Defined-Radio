@@ -3,12 +3,12 @@ import traceback
 from PySide6.QtCore import QObject, QTimer
 from PySide6.QtWidgets import QApplication
 
-from Backend.Audio.Audio_output import AudioOutput
-from Backend.Pipeline.Pipeline import SDRPipeline
-from Backend.Receiver.Config import ReceiverConfig
-from Backend.Receiver.Rtl_sdr_receiver import RtlSdrReceiver
-from Config.Current import current_config
-from Frontend.Main_window import MainWindow
+from backend.audio.audio_output import AudioOutput
+from backend.pipeline.pipeline import SDRPipeline
+from backend.receiver.config import ReceiverConfig
+from backend.receiver.rtl_sdr_receiver import RtlSdrReceiver
+from config.current import current_config
+from frontend.main_window import MainWindow
 
 
 class SDRApplicationController(QObject):

@@ -1,6 +1,6 @@
 import numpy as np
 
-from Backend.Dsp.Filters import remove_dc
+from backend.dsp.filters import remove_dc
 
 
 def demodulate_am(iq_samples):
