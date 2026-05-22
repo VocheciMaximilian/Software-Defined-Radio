@@ -144,10 +144,7 @@ class RtlSdrLibrary:
             self._lib.rtlsdr_set_sample_rate(device, int(config.sample_rate)),
             "rtlsdr_set_sample_rate",
         )
-        self._check(
-            self._lib.rtlsdr_set_center_freq(device, int(config.center_frequency)),
-            "rtlsdr_set_center_freq",
-        )
+        self.set_center_frequency(device, config.center_frequency)
 
         if config.gain == "auto":
             self._check(
@@ -164,6 +161,15 @@ class RtlSdrLibrary:
                 "rtlsdr_set_tuner_gain",
             )
 
+        self._check(self._lib.rtlsdr_reset_buffer(device), "rtlsdr_reset_buffer")
+
+    def set_center_frequency(self, device, center_frequency):
+        self._check(
+            self._lib.rtlsdr_set_center_freq(device, int(center_frequency)),
+            "rtlsdr_set_center_freq",
+        )
+
+    def reset_buffer(self, device):
         self._check(self._lib.rtlsdr_reset_buffer(device), "rtlsdr_reset_buffer")
 
     def read_samples(self, device, sample_count):
@@ -230,3 +236,11 @@ class RtlSdrReceiver(Receiver):
             self.config.sample_rate,
             self.config.center_frequency,
         )
+
+    def set_center_frequency(self, center_frequency):
+        if self._device is None or self._library is None:
+            raise RuntimeError("Receiver is not open.")
+
+        self._library.set_center_frequency(self._device, center_frequency)
+        self._library.reset_buffer(self._device)
+        self.config.center_frequency = float(center_frequency)

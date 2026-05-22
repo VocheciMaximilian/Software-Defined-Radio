@@ -1,4 +1,4 @@
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QSignalBlocker, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -66,6 +66,63 @@ class ControlsPanel(QWidget):
         frequency_layout.addRow("Gain", self.gain_spin)
         frequency_layout.addRow("", self.auto_gain_check)
 
+        sweep_group = QGroupBox("Sweep")
+        sweep_layout = QFormLayout(sweep_group)
+
+        self.sweep_check = QCheckBox("Enable sweep")
+
+        self.sweep_start_spin = QDoubleSpinBox()
+        self.sweep_start_spin.setRange(100_000, 1_700_000_000)
+        self.sweep_start_spin.setDecimals(0)
+        self.sweep_start_spin.setSingleStep(100_000)
+        self.sweep_start_spin.setSuffix(" Hz")
+        self.sweep_start_spin.setValue(
+            max(100_000, self._config.receiver.center_frequency - 2_000_000)
+        )
+
+        self.sweep_stop_spin = QDoubleSpinBox()
+        self.sweep_stop_spin.setRange(100_000, 1_700_000_000)
+        self.sweep_stop_spin.setDecimals(0)
+        self.sweep_stop_spin.setSingleStep(100_000)
+        self.sweep_stop_spin.setSuffix(" Hz")
+        self.sweep_stop_spin.setValue(self._config.receiver.center_frequency + 2_000_000)
+
+        self.sweep_step_spin = QDoubleSpinBox()
+        self.sweep_step_spin.setRange(1_000, 10_000_000)
+        self.sweep_step_spin.setDecimals(0)
+        self.sweep_step_spin.setSingleStep(10_000)
+        self.sweep_step_spin.setSuffix(" Hz")
+        self.sweep_step_spin.setValue(100_000)
+
+        sweep_layout.addRow("", self.sweep_check)
+        sweep_layout.addRow("Start", self.sweep_start_spin)
+        sweep_layout.addRow("Stop", self.sweep_stop_spin)
+        sweep_layout.addRow("Step", self.sweep_step_spin)
+
+        isolation_group = QGroupBox("Signal isolation")
+        isolation_layout = QFormLayout(isolation_group)
+
+        self.isolation_check = QCheckBox("Show isolation")
+        self.isolation_check.setChecked(True)
+
+        self.isolation_low_spin = QDoubleSpinBox()
+        self.isolation_low_spin.setRange(-10_000_000, 10_000_000)
+        self.isolation_low_spin.setDecimals(0)
+        self.isolation_low_spin.setSingleStep(10_000)
+        self.isolation_low_spin.setSuffix(" Hz")
+        self.isolation_low_spin.setValue(-100_000)
+
+        self.isolation_high_spin = QDoubleSpinBox()
+        self.isolation_high_spin.setRange(-10_000_000, 10_000_000)
+        self.isolation_high_spin.setDecimals(0)
+        self.isolation_high_spin.setSingleStep(10_000)
+        self.isolation_high_spin.setSuffix(" Hz")
+        self.isolation_high_spin.setValue(100_000)
+
+        isolation_layout.addRow("", self.isolation_check)
+        isolation_layout.addRow("Low offset", self.isolation_low_spin)
+        isolation_layout.addRow("High offset", self.isolation_high_spin)
+
         demod_group = QGroupBox("Demodulation")
         demod_layout = QFormLayout(demod_group)
         self.mode_combo = QComboBox()
@@ -99,6 +156,8 @@ class ControlsPanel(QWidget):
 
         root.addWidget(hint)
         root.addWidget(frequency_group)
+        root.addWidget(sweep_group)
+        root.addWidget(isolation_group)
         root.addWidget(demod_group)
         root.addLayout(buttons)
         root.addWidget(separator)
@@ -112,6 +171,13 @@ class ControlsPanel(QWidget):
             self.mode_combo,
             self.fft_spin,
             self.audio_check,
+            self.sweep_check,
+            self.sweep_start_spin,
+            self.sweep_stop_spin,
+            self.sweep_step_spin,
+            self.isolation_check,
+            self.isolation_low_spin,
+            self.isolation_high_spin,
         ]
 
         for widget in widgets:
@@ -142,13 +208,40 @@ class ControlsPanel(QWidget):
             "demodulation_mode": self.mode_combo.currentText(),
             "fft_size": self.fft_spin.value(),
             "audio_enabled": self.audio_check.isChecked(),
+            "sweep_enabled": self.sweep_check.isChecked(),
+            "sweep_start_frequency": self.sweep_start_spin.value(),
+            "sweep_stop_frequency": self.sweep_stop_spin.value(),
+            "sweep_step_hz": self.sweep_step_spin.value(),
+            "isolation_enabled": self.isolation_check.isChecked(),
+            "isolation_low_offset": self.isolation_low_spin.value(),
+            "isolation_high_offset": self.isolation_high_spin.value(),
         }
+
+    def set_center_frequency(self, center_frequency):
+        with QSignalBlocker(self.frequency_spin):
+            self.frequency_spin.setValue(float(center_frequency))
+
+    def set_isolation_region(self, low_offset, high_offset):
+        with QSignalBlocker(self.isolation_low_spin):
+            self.isolation_low_spin.setValue(float(low_offset))
+
+        with QSignalBlocker(self.isolation_high_spin):
+            self.isolation_high_spin.setValue(float(high_offset))
+
+        self._emit_settings()
 
     def set_running(self, running):
         self.start_button.setEnabled(not running)
         self.stop_button.setEnabled(running)
-        self.frequency_spin.setEnabled(not running)
+        self.frequency_spin.setEnabled(True)
         self.sample_rate_spin.setEnabled(not running)
         self.gain_spin.setEnabled(not running and not self.auto_gain_check.isChecked())
         self.auto_gain_check.setEnabled(not running)
-        self.fft_spin.setEnabled(not running)
+        self.fft_spin.setEnabled(True)
+        self.sweep_check.setEnabled(True)
+        self.sweep_start_spin.setEnabled(True)
+        self.sweep_stop_spin.setEnabled(True)
+        self.sweep_step_spin.setEnabled(True)
+        self.isolation_check.setEnabled(True)
+        self.isolation_low_spin.setEnabled(True)
+        self.isolation_high_spin.setEnabled(True)

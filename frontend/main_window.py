@@ -40,6 +40,12 @@ class MainWindow(QMainWindow):
         self.controls.stop_requested.connect(self.stop_requested)
 
         self.spectrum_view = SpectrumView()
+        self.spectrum_view.frequency_offset_selected.connect(
+            self._on_frequency_offset_selected
+        )
+        self.spectrum_view.isolation_region_changed.connect(
+            self._on_isolation_region_changed
+        )
         self.waterfall_view = WaterfallView()
 
         self.frequency_label = QLabel("100.000.000 Hz")
@@ -192,7 +198,12 @@ class MainWindow(QMainWindow):
 
     def _on_settings_changed(self, settings):
         self.settings = settings
-        self.frequency_label.setText(f"{settings['center_frequency']:,.0f} Hz".replace(",", "."))
+        self.set_center_frequency(settings["center_frequency"])
+        self.spectrum_view.set_isolation_visible(settings["isolation_enabled"])
+        self.spectrum_view.set_isolation_region(
+            settings["isolation_low_offset"],
+            settings["isolation_high_offset"],
+        )
         self.mode_label.setText(settings["demodulation_mode"].upper())
         self.settings_changed.emit(settings)
 
@@ -218,6 +229,29 @@ class MainWindow(QMainWindow):
         self.spectrum_view.update_frame(frame.spectrum)
         self.waterfall_view.update_frame(frame.spectrum)
         self.status.showMessage(f"Running RTL-SDR | Frames: {self.frames_processed}")
+
+    def set_center_frequency(self, center_frequency):
+        self.frequency_label.setText(f"{center_frequency:,.0f} Hz".replace(",", "."))
+        self.controls.set_center_frequency(center_frequency)
+
+    def _on_frequency_offset_selected(self, offset_hz):
+        if self.controls.sweep_check.isChecked():
+            self.controls.sweep_check.setChecked(False)
+
+        frequency = self.controls.current_settings()["center_frequency"] + offset_hz
+        frequency = max(
+            self.controls.frequency_spin.minimum(),
+            min(self.controls.frequency_spin.maximum(), frequency),
+        )
+        self.controls.frequency_spin.setValue(frequency)
+
+    def _on_isolation_region_changed(self, low_offset, high_offset):
+        self.controls.set_isolation_region(low_offset, high_offset)
+        bandwidth = abs(high_offset - low_offset)
+        self.status.showMessage(
+            f"Isolated region: {low_offset:,.0f} Hz to {high_offset:,.0f} Hz "
+            f"({bandwidth:,.0f} Hz wide)".replace(",", ".")
+        )
 
     def show_error(self, message):
         self.state_label.setText("Error")

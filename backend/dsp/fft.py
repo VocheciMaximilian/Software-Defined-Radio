@@ -12,9 +12,13 @@ def power_spectrum_db(samples, fft_size=1024):
         return np.array([], dtype=np.float32)
 
     fft_size = min(max(1, int(fft_size)), samples.size)
-    windowed = samples[:fft_size] * np.hanning(fft_size)
-    spectrum = np.fft.fftshift(np.fft.fft(windowed))
-    return 10 * np.log10(power(spectrum) + 1e-18)
+    frame_count = samples.size // fft_size
+    usable_samples = samples[: frame_count * fft_size]
+    frames = usable_samples.reshape(frame_count, fft_size)
+    window = np.hanning(fft_size)
+    spectra = np.fft.fftshift(np.fft.fft(frames * window, axis=1), axes=1)
+    mean_power = np.mean(power(spectra), axis=0)
+    return (10 * np.log10(mean_power + 1e-18)).astype(np.float32)
 
 
 def normalize_spectrum(power_db, floor_percentile=5, ceiling_percentile=98):
