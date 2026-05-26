@@ -14,6 +14,158 @@ Obiectivul proiectului este realizarea unui receptor SDR modular, in care fiecar
 Aceasta separare permite testarea mai usoara a fiecarei parti si extinderea proiectului cu moduri noi de demodulare sau surse diferite de semnal.
 
 ## 2. Teoria lucrarii
+Un receptor SDR muta cat mai multa logica radio din hardware in software. In loc ca semnalul sa fie filtrat, demodulat si transformat in audio de circuite analogice dedicate, dongle-ul RTL-SDR face conversia initiala in esantioane digitale, iar aplicatia Python proceseaza numeric aceste esantioane. Fluxul principal este:
+
+```text
+semnal RF -> conversie in banda de baza IQ -> procesare DSP -> demodulare -> audio/spectru
+```
+
+### 2.1. Esantionarea IQ
+Semnalul radio receptionat este un semnal real de frecventa inalta. Pentru a putea fi procesat eficient, receptorul il translateaza in jurul frecventei centrale selectate si il reprezinta in banda de baza prin doua componente:
+- `I` - componenta in faza;
+- `Q` - componenta in cuadratura, defazata cu 90 de grade.
+
+Un esantion IQ este reprezentat ca numar complex:
+
+$$
+x[n] = I[n] + jQ[n]
+$$
+
+unde `n` este indexul esantionului, iar `j` este unitatea imaginara. Aceasta reprezentare pastreaza simultan informatia de amplitudine si de faza a semnalului. Amplitudinea instantanee este:
+
+$$
+|x[n]| = \sqrt{I[n]^2 + Q[n]^2}
+$$
+
+iar faza instantanee este:
+
+$$
+\varphi[n] = \operatorname{atan2}(Q[n], I[n])
+$$
+
+In proiect, blocurile IQ sunt citite din `RtlSdrReceiver`, apoi sunt impachetate intr-un `IQBlock`, impreuna cu rata de esantionare si frecventa centrala.
+
+### 2.2. Rata de esantionare si conditia Nyquist
+Rata de esantionare, notata cu $f_s$, stabileste cate esantioane sunt citite pe secunda. Pentru ca un semnal cu latimea de banda $B$ sa poata fi reconstruit fara aliasing, este necesar ca:
+
+$$
+f_s \ge 2B
+$$
+
+In practica se foloseste o rezerva peste limita teoretica, deoarece filtrele digitale nu au tranzitie ideala. In aplicatie, rata IQ este mai mare decat rata audio finala. Dupa izolarea canalului si demodulare, semnalul este resamplat catre rata audio standard:
+
+$$
+f_{audio} = 48000 \text{ Hz}
+$$
+
+### 2.3. Translatarea in frecventa
+Daca semnalul de interes nu este exact in centrul benzii receptionate, el poate fi mutat digital prin inmultirea cu o exponentiala complexa:
+
+$$
+y[n] = x[n] \cdot e^{-j2\pi f_0 n / f_s}
+$$
+
+unde $f_0$ este offset-ul fata de frecventa centrala, iar $f_s$ este rata de esantionare. Aceasta operatie este folosita pentru a aduce canalul selectat in jurul frecventei zero, inainte de resampling si demodulare.
+
+In cod, aceasta operatie apare in pipeline prin functia interna de shift continuu, care pastreaza faza intre blocuri pentru a evita discontinuitati la marginea blocurilor.
+
+### 2.4. Analiza in frecventa cu FFT
+Pentru afisarea spectrului, semnalul IQ este transformat din domeniul timp in domeniul frecventa folosind Transformata Fourier Discreta:
+
+$$
+X[k] = \sum_{n=0}^{N-1} x[n] e^{-j2\pi kn/N}
+$$
+
+unde $N$ este dimensiunea FFT, iar $k$ este indexul binului de frecventa. Puterea spectrala este calculata ca:
+
+$$
+P[k] = |X[k]|^2
+$$
+
+Pentru afisare este mai utila scara logaritmica in decibeli:
+
+$$
+P_{dB}[k] = 10 \log_{10}(P[k] + \epsilon)
+$$
+
+Termenul $\epsilon$ evita logaritmul lui zero. In implementare, blocurile sunt impartite in frame-uri de lungime `fft_size`, se aplica o fereastra Hann pentru reducerea scurgerii spectrale, apoi se face media puterii pe frame-uri. Rezultatul este normalizat in intervalul `[0, 1]` pentru afisarea waterfall-ului.
+
+### 2.5. Izolarea canalului si resampling
+Semnalul receptionat poate contine mai multe canale in aceeasi banda IQ. Pentru procesarea unui canal ales, aplicatia poate folosi o regiune de izolare definita prin doua offset-uri fata de frecventa centrala. Latimea benzii selectate este:
+
+$$
+B = f_{high} - f_{low}
+$$
+
+iar centrul acestei regiuni este:
+
+$$
+f_c = \frac{f_{low} + f_{high}}{2}
+$$
+
+Dupa translatarea canalului in banda de baza, semnalul poate fi redus la o rata de esantionare mai mica. Resampling-ul reduce volumul de date si face demodularea mai stabila, cu conditia ca noua rata sa ramana suficient de mare pentru latimea de banda procesata.
+
+In proiect, `StreamingResampler` foloseste `scipy.signal.resample_poly`, adica resampling rational prin interpolare si decimare polifazica. Pentru un raport:
+
+$$
+\frac{f_{target}}{f_{source}} = \frac{L}{M}
+$$
+
+semnalul este interpolat cu factorul $L$ si decimat cu factorul $M$.
+
+### 2.6. Demodularea AM
+In modulatia AM, informatia utila este continuta in variatia amplitudinii purtatoarei. Pentru un semnal IQ, amplitudinea poate fi extrasa prin modulul numarului complex:
+
+$$
+m_{AM}[n] = |x[n]|
+$$
+
+Componenta continua este eliminata pentru ca audio-ul rezultat sa fie centrat in jurul valorii zero:
+
+$$
+m_{AM,curat}[n] = m_{AM}[n] - \overline{m_{AM}}
+$$
+
+In implementare, demodulatorul AM calculeaza `np.abs(iq_samples)` si aplica eliminarea componentei DC.
+
+### 2.7. Demodularea FM
+In modulatia FM, informatia utila este continuta in variatia frecventei instantanee. Frecventa instantanee este proportionala cu diferenta de faza dintre doua esantioane consecutive. Pentru esantioane complexe, diferenta de faza se poate calcula robust prin:
+
+$$
+m_{FM}[n] = \angle \left( x[n] \cdot x^*[n-1] \right)
+$$
+
+unde $x^*[n-1]$ este conjugatul complex al esantionului anterior. Aceasta formula evita calculul separat al fazei absolute si reduce problemele de infasurare a fazei in intervalul $[-\pi, \pi]$.
+
+In pipeline, ultimul esantion din blocul anterior este pastrat si lipit la blocul curent pentru ca demodularea FM sa ramana continua intre citiri succesive.
+
+### 2.8. Conditionarea semnalului audio
+Dupa demodulare, semnalul rezultat nu este inca potrivit direct pentru redare. Aplicatia aplica mai multe etape de conditionare:
+- resampling catre `48_000 Hz`;
+- eliminare DC cu un filtru trece-sus simplu;
+- pentru FM, filtru trece-sus audio, notch la `19 kHz` pentru pilotul stereo si de-emphasis;
+- normalizare RMS pentru volum mai constant;
+- limitare soft cu `tanh` pentru a reduce clipping-ul.
+
+Filtrul de blocare DC poate fi exprimat prin relatia:
+
+$$
+y[n] = x[n] - x[n-1] + R \cdot y[n-1]
+$$
+
+unde $R$ este apropiat de 1. In proiect se foloseste:
+
+$$
+R = 0.995
+$$
+
+Pentru FM broadcast se aplica si de-emphasis, un filtru trece-jos de ordinul intai care compenseaza pre-emphasis-ul folosit la transmisie. Constanta de timp folosita este:
+
+$$
+\tau = 75 \mu s
+$$
+
+La final, semnalul este convertit la `float32` si trimis catre `AudioOutput`.
 
 ## 3. Structura proiectului
 ```text
