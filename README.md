@@ -69,7 +69,7 @@ $$
 iar faza instantanee este:
 
 $$
-\varphi[n] = \operatorname{atan2}(Q[n], I[n])
+\varphi[n] = \mathrm{atan2}(Q[n], I[n])
 $$
 
 In proiect, blocurile IQ sunt citite din `RtlSdrReceiver`, apoi sunt impachetate intr-un `IQBlock`, impreuna cu rata de esantionare si frecventa centrala.
@@ -233,7 +233,7 @@ Waterfall-ul este o reprezentare vizuala a spectrogramei. Axa orizontala reprezi
 Pentru fiecare frame de spectru se calculeaza o linie normalizata:
 
 $$
-W[t, k] = \operatorname{clip} \left( \frac{P_{dB}[t, k] - F}{C - F}, 0, 1 \right)
+W[t, k] = \mathrm{clip} \left( \frac{P_{dB}[t, k] - F}{C - F}, 0, 1 \right)
 $$
 
 unde:
