@@ -14,17 +14,6 @@ Obiectivul proiectului este realizarea unui receptor SDR modular, in care fiecar
 Aceasta separare permite testarea mai usoara a fiecarei parti si extinderea proiectului cu moduri noi de demodulare sau surse diferite de semnal.
 
 ## 2. Teoria lucrarii
-Aceasta sectiune va fi completata ulterior.
-
-Subiecte care pot fi incluse:
-- principiul de functionare al unui sistem Software-Defined Radio;
-- reprezentarea semnalelor IQ;
-- esantionarea si rata de esantionare;
-- spectrul de frecvente si transformata Fourier;
-- filtrarea digitala a semnalelor;
-- demodularea AM si FM;
-- rolul resampling-ului in lantul de procesare;
-- particularitati ale dispozitivelor RTL-SDR.
 
 ## 3. Structura proiectului
 ```text
@@ -215,7 +204,55 @@ Interfata permite:
 - activarea iesirii audio;
 - vizualizarea spectrului si waterfall-ului in timp real.
 
-## 10. Functionalitati implementate
+## 10. Probleme intampinate recent si investigatii
+### 10.1. Problema cu driverul / libraria RTL-SDR
+In timpul integrarii cu dongle-ul RTL-SDR au aparut probleme legate de accesul la dispozitiv si de librariile native folosite de `pyrtlsdr`.
+
+Simptome observate:
+- aplicatia poate porni, dar citirea blocurilor IQ poate esua in timpul rularii;
+- pot aparea erori de comunicare USB in momentul in care aplicatia incearca sa citeasca esantioane IQ de la dispozitiv;
+- in unele configuratii, `pyrtlsdr` poate incarca un `rtlsdr.dll` incompatibil sau prea vechi, ceea ce poate produce erori de import, inclusiv lipsa functiei `rtlsdr_set_dithering`.
+
+Ce s-a incercat pana acum:
+- instalarea dependintei cu libraria nativa inclusa:
+
+```powershell
+python -m pip install --upgrade "pyrtlsdr[lib]"
+```
+
+- verificarea faptului ca Python si DLL-urile RTL-SDR au aceeasi arhitectura, de preferat 64-bit;
+- adaugarea suportului pentru folderul local `dll/`, astfel incat aplicatia sa poata incarca librarii RTL-SDR din proiect daca folderul exista;
+- tratarea explicita a erorilor de import in `RtlSdrReceiver`, cu mesaje mai clare pentru DLL incompatibil sau lipsa librariei native;
+- configurarea dispozitivului cu driver `WinUSB`, necesar in mod obisnuit pe Windows pentru acces prin `librtlsdr`;
+- reducerea riscului de stare instabila prin inchiderea receiver-ului daca initializarea esueaza.
+
+Pasi ramasi de verificat:
+- testarea dongle-ului cu un utilitar extern, de exemplu `rtl_test`, pentru a confirma ca driverul si dispozitivul functioneaza independent de aplicatie;
+- verificarea portului USB si evitarea hub-urilor USB daca apar erori intermitente de tip `LIBUSB_ERROR_IO`;
+- incercarea unei dimensiuni mai mici pentru `block_size`, daca eroarea apare la citiri mari.
+
+### 10.2. Problema cu sunetul / iesirea audio
+Au aparut probleme si in zona de redare audio, unde semnalul demodulat trebuie trimis catre placa de sunet prin `sounddevice`.
+
+Simptome posibile:
+- aplicatia ruleaza si proceseaza semnalul, dar nu se aude nimic;
+- audio-ul poate fi intrerupt sau instabil daca pipeline-ul produce esantioane intr-un ritm diferit fata de consumul placii de sunet;
+- pot aparea erori daca `sounddevice` nu este instalat corect sau daca backend-ul audio al sistemului nu este disponibil.
+
+Ce s-a incercat pana acum:
+- folosirea `sounddevice.OutputStream` cu un callback audio dedicat;
+- conversia esantioanelor la `float32`, format potrivit pentru iesirea audio;
+- limitarea semnalului audio in intervalul `[-1.0, 1.0]` pentru a evita clipping-ul excesiv;
+- introducerea unui buffer intern bazat pe coada, astfel incat callback-ul audio sa poata consuma esantioane fara sa depinda direct de viteza pipeline-ului;
+- folosirea unei latente mai mari (`latency="high"`) pentru stabilitate;
+- pastrarea iesirii audio pe un singur canal (`channels=1`) si sample rate audio standard de `48_000` Hz.
+
+Pasi ramasi de verificat:
+- listarea dispozitivelor audio disponibile in `sounddevice` si alegerea explicita a dispozitivului corect, daca sistemul are mai multe iesiri;
+- verificarea ratei audio finale dupa demodulare si resampling, ca sa ramana compatibila cu `48_000` Hz;
+- testarea pipeline-ului audio cu un semnal generat software, separat de receptorul RTL-SDR, pentru a izola problema de partea radio.
+
+## 11. Functionalitati implementate
 - Modele de date pentru blocuri IQ, audio si spectru.
 - Functii pure pentru FFT, putere, normalizare spectru si spectrograma.
 - Functii pure pentru eliminare DC, moving average si normalizare RMS.
@@ -229,7 +266,7 @@ Interfata permite:
 - Pipeline SDR pentru procesarea unui frame complet.
 - Interfata grafica desktop cu panou de control, spectrum view si waterfall view.
 
-## 11. Testare
+## 12. Testare
 In prezent, proiectul nu include o suita de teste automate.
 
 Verificarea manuala recomandata:

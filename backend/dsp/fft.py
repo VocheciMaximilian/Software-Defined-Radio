@@ -36,7 +36,7 @@ def normalize_spectrum(power_db, floor_percentile=5, ceiling_percentile=98):
     return np.clip((power_db - floor) / (ceiling - floor), 0.0, 1.0)
 
 
-def spectrogram_matrix(samples, fft_size=1024):
+def spectrogram_matrix(samples, fft_size=512):
     samples = np.asarray(samples)
     fft_size = int(fft_size)
 

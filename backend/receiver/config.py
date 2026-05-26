@@ -4,7 +4,7 @@ from dataclasses import dataclass
 @dataclass
 class ReceiverConfig:
     center_frequency: float = 100_000_000
-    sample_rate: float = 2_048_000
+    sample_rate: float = 1_024_000
     gain: float = 20.0
     block_size: int = 131_072
 

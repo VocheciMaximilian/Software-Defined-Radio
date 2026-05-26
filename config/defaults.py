@@ -3,7 +3,7 @@ from backend.receiver.config import ReceiverConfig
 
 DEFAULT_RECEIVER_CONFIG = ReceiverConfig(
     center_frequency=100_000_000,
-    sample_rate=2_048_000,
+    sample_rate=1_024_000,
     gain=20.0,
     block_size=131_072,
 )
