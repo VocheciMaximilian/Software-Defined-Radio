@@ -152,7 +152,7 @@ Dependentele proiectului sunt definite in `requirements.txt`:
 ```text
 numpy
 scipy
-pyrtlsdr
+pyrtlsdr[lib]
 sounddevice
 PySide6
 pyqtgraph
@@ -182,6 +182,14 @@ Pentru rularea aplicatiei cu un dongle RTL-SDR este necesara instalarea driverel
 
 Pe Windows, dispozitivul trebuie configurat astfel incat sa poata fi accesat de libraria RTL-SDR. In mod obisnuit, acest lucru presupune instalarea driverului `WinUSB` pentru dispozitivul RTL-SDR.
 
+Aplicatia foloseste API-ul Python `pyrtlsdr`, dar acesta incarca in continuare o librarie nativa `librtlsdr`/`rtlsdr.dll`. Arhitectura trebuie sa se potriveasca: Python 64-bit are nevoie de DLL-uri 64-bit, iar Python 32-bit are nevoie de DLL-uri 32-bit. Instalarea recomandata este:
+
+```powershell
+python -m pip install --upgrade "pyrtlsdr[lib]"
+```
+
+Daca exista DLL-uri RTL-SDR vechi in `PATH` sau in folderul `dll/`, acestea pot fi incarcate inaintea celor bune si pot produce erori de import precum lipsa functiei `rtlsdr_set_dithering`.
+
 Setarile importante sunt definite prin `ReceiverConfig`:
 - `center_frequency`;
 - `sample_rate`;
@@ -201,7 +209,7 @@ Interfata permite:
 - pornirea si oprirea pipeline-ului;
 - selectarea frecventei centrale;
 - selectarea ratei de esantionare;
-- configurarea gain-ului manual sau automat;
+- configurarea gain-ului manual;
 - alegerea modului de demodulare AM/FM;
 - modificarea dimensiunii FFT;
 - activarea iesirii audio;

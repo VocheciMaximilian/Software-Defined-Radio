@@ -1,7 +1,7 @@
 import traceback
 from threading import Event, Lock
 
-from PySide6.QtCore import QObject, QThread, QTimer, Signal
+from PySide6.QtCore import QObject, QThread, Signal
 from PySide6.QtWidgets import QApplication
 
 from backend.audio.audio_output import AudioOutput
@@ -89,6 +89,11 @@ class SDRPipelineWorker(QThread):
             fft_size=settings["fft_size"],
             audio_output=self._audio_output,
         )
+        self._pipeline.set_isolation_region(
+            settings["isolation_enabled"],
+            settings["isolation_low_offset"],
+            settings["isolation_high_offset"],
+        )
 
     def _apply_settings(self):
         with self._settings_lock:
@@ -96,6 +101,11 @@ class SDRPipelineWorker(QThread):
 
         self._pipeline.demodulation_mode = settings["demodulation_mode"]
         self._pipeline.fft_size = settings["fft_size"]
+        self._pipeline.set_isolation_region(
+            settings["isolation_enabled"],
+            settings["isolation_low_offset"],
+            settings["isolation_high_offset"],
+        )
         target_frequency = self._target_frequency(settings)
 
         if target_frequency != self._active_frequency:
@@ -235,7 +245,6 @@ def main():
     controller = SDRApplicationController(window, current_config)
     app.controller = controller
     window.show()
-    QTimer.singleShot(250, lambda: controller.start(window.controls.current_settings()))
     app.exec()
 
 

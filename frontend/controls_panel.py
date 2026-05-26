@@ -55,16 +55,11 @@ class ControlsPanel(QWidget):
         self.gain_spin.setDecimals(1)
         self.gain_spin.setSingleStep(0.5)
         self.gain_spin.setSuffix(" dB")
-        self.gain_spin.setValue(20)
-
-        self.auto_gain_check = QCheckBox("Auto gain")
-        self.auto_gain_check.setChecked(self._config.receiver.gain == "auto")
-        self.gain_spin.setEnabled(not self.auto_gain_check.isChecked())
+        self.gain_spin.setValue(float(self._config.receiver.gain))
 
         frequency_layout.addRow("Frequency", self.frequency_spin)
         frequency_layout.addRow("Sample rate", self.sample_rate_spin)
         frequency_layout.addRow("Gain", self.gain_spin)
-        frequency_layout.addRow("", self.auto_gain_check)
 
         sweep_group = QGroupBox("Sweep")
         sweep_layout = QFormLayout(sweep_group)
@@ -155,12 +150,12 @@ class ControlsPanel(QWidget):
         hint.setObjectName("panelCaption")
 
         root.addWidget(hint)
+        root.addLayout(buttons)
+        root.addWidget(separator)
         root.addWidget(frequency_group)
         root.addWidget(sweep_group)
         root.addWidget(isolation_group)
         root.addWidget(demod_group)
-        root.addLayout(buttons)
-        root.addWidget(separator)
         root.addStretch(1)
 
     def _connect_signals(self):
@@ -188,23 +183,17 @@ class ControlsPanel(QWidget):
             elif hasattr(widget, "toggled"):
                 widget.toggled.connect(self._emit_settings)
 
-        self.auto_gain_check.toggled.connect(self._on_auto_gain_toggled)
         self.start_button.clicked.connect(self.start_requested)
         self.stop_button.clicked.connect(self.stop_requested)
-
-    def _on_auto_gain_toggled(self, checked):
-        self.gain_spin.setEnabled(not checked)
-        self._emit_settings()
 
     def _emit_settings(self):
         self.settings_changed.emit(self.current_settings())
 
     def current_settings(self):
-        gain = "auto" if self.auto_gain_check.isChecked() else self.gain_spin.value()
         return {
             "center_frequency": self.frequency_spin.value(),
             "sample_rate": self.sample_rate_spin.value(),
-            "gain": gain,
+            "gain": self.gain_spin.value(),
             "demodulation_mode": self.mode_combo.currentText(),
             "fft_size": self.fft_spin.value(),
             "audio_enabled": self.audio_check.isChecked(),
@@ -235,8 +224,7 @@ class ControlsPanel(QWidget):
         self.stop_button.setEnabled(running)
         self.frequency_spin.setEnabled(True)
         self.sample_rate_spin.setEnabled(not running)
-        self.gain_spin.setEnabled(not running and not self.auto_gain_check.isChecked())
-        self.auto_gain_check.setEnabled(not running)
+        self.gain_spin.setEnabled(not running)
         self.fft_spin.setEnabled(True)
         self.sweep_check.setEnabled(True)
         self.sweep_start_spin.setEnabled(True)

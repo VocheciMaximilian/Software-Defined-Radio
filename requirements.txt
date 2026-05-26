@@ -1,6 +1,6 @@
 numpy
 scipy
-pyrtlsdr
+pyrtlsdr[lib]
 sounddevice
 PySide6
 pyqtgraph
