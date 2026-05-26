@@ -5,7 +5,7 @@ DEFAULT_RECEIVER_CONFIG = ReceiverConfig(
     center_frequency=100_000_000,
     sample_rate=1_024_000,
     gain=20.0,
-    block_size=131_072,
+    block_size=32_768,
 )
 
 DEFAULT_DEMODULATION_MODE = "fm"
