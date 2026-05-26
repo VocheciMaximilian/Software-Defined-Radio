@@ -3,6 +3,35 @@ Un sistem software pentru receptia si procesarea semnalelor radio folosind un do
 
 Aplicatia foloseste `pyrtlsdr` pentru comunicarea cu dispozitivul RTL-SDR, `numpy` si `scipy` pentru procesarea digitala a semnalului, `sounddevice` pentru redarea audio, iar interfata grafica este pregatita pentru `PySide6` si `pyqtgraph`.
 
+## Cuprins
+- [1. Obiectivul proiectului](#1-obiectivul-proiectului)
+- [2. Teoria lucrarii](#2-teoria-lucrarii)
+  - [2.1. Esantionarea IQ](#21-esantionarea-iq)
+  - [2.2. Rata de esantionare si conditia Nyquist](#22-rata-de-esantionare-si-conditia-nyquist)
+  - [2.3. Translatarea in frecventa](#23-translatarea-in-frecventa)
+  - [2.4. Analiza in frecventa cu FFT](#24-analiza-in-frecventa-cu-fft)
+  - [2.5. Izolarea canalului si resampling](#25-izolarea-canalului-si-resampling)
+  - [2.6. Demodularea AM](#26-demodularea-am)
+  - [2.7. Demodularea FM](#27-demodularea-fm)
+  - [2.8. Conditionarea semnalului audio](#28-conditionarea-semnalului-audio)
+  - [2.9. Ferestre de analiza si fereastra Hann](#29-ferestre-de-analiza-si-fereastra-hann)
+  - [2.10. Spectrograma](#210-spectrograma)
+  - [2.11. Waterfall](#211-waterfall)
+  - [2.12. Media mobila si netezirea semnalului](#212-media-mobila-si-netezirea-semnalului)
+  - [2.13. Eliminarea componentei DC](#213-eliminarea-componentei-dc)
+  - [2.14. Normalizarea RMS](#214-normalizarea-rms)
+  - [2.15. Estimarea benzii ocupate](#215-estimarea-benzii-ocupate)
+- [3. Structura proiectului](#3-structura-proiectului)
+- [4. Rolul modulelor](#4-rolul-modulelor)
+- [5. Fluxul aplicatiei](#5-fluxul-aplicatiei)
+- [6. Dependente](#6-dependente)
+- [7. Setup Python](#7-setup-python)
+- [8. Configurare RTL-SDR](#8-configurare-rtl-sdr)
+- [9. Rulare](#9-rulare)
+- [10. Probleme intampinate recent si investigatii](#10-probleme-intampinate-recent-si-investigatii)
+- [11. Functionalitati implementate](#11-functionalitati-implementate)
+- [12. Testare](#12-testare)
+
 ## 1. Obiectivul proiectului
 Obiectivul proiectului este realizarea unui receptor SDR modular, in care fiecare componenta are o responsabilitate separata:
 - receptorul citeste blocuri IQ;
@@ -166,6 +195,142 @@ $$
 $$
 
 La final, semnalul este convertit la `float32` si trimis catre `AudioOutput`.
+
+### 2.9. Ferestre de analiza si fereastra Hann
+Atunci cand se calculeaza FFT pe un bloc finit de esantioane, se presupune implicit ca acel bloc se repeta periodic. Daca inceputul si finalul blocului nu se potrivesc perfect, apar discontinuitati artificiale care imprastie energia in mai multe binuri de frecventa. Acest efect se numeste scurgere spectrala.
+
+Pentru reducerea scurgerii spectrale se aplica o functie fereastra inainte de FFT. In proiect este folosita fereastra Hann:
+
+$$
+w[n] = 0.5 - 0.5 \cos \left( \frac{2\pi n}{N - 1} \right)
+$$
+
+Semnalul analizat devine:
+
+$$
+x_w[n] = x[n] \cdot w[n]
+$$
+
+Fereastra Hann reduce amplitudinea esantioanelor de la marginile blocului si pastreaza mai mult din energia centrala. Rezultatul este un spectru mai stabil vizual, cu lobi laterali mai mici, potrivit pentru afisarea in timp real.
+
+### 2.10. Spectrograma
+O spectrograma reprezinta evolutia spectrului in timp. In loc sa se calculeze o singura FFT pentru tot semnalul, semnalul este impartit in ferestre succesive, iar pentru fiecare fereastra se calculeaza spectrul de putere:
+
+$$
+S[t, k] = 10 \log_{10} \left( |FFT(x_t)[k]|^2 + \epsilon \right)
+$$
+
+unde:
+- $t$ este indexul frame-ului temporal;
+- $k$ este indexul binului de frecventa;
+- $x_t$ este blocul de esantioane analizat la momentul $t$.
+
+Rezultatul este o matrice in care fiecare rand corespunde unui moment de timp, iar fiecare coloana corespunde unei frecvente. In proiect, functia `spectrogram_matrix` construieste aceasta matrice prin aplicarea repetata a functiei `power_spectrum_db`.
+
+### 2.11. Waterfall
+Waterfall-ul este o reprezentare vizuala a spectrogramei. Axa orizontala reprezinta frecventa, axa verticala reprezinta timpul, iar culoarea reprezinta puterea semnalului. Un semnal puternic apare ca o zona mai luminoasa, iar zgomotul de fond apare mai intunecat.
+
+Pentru fiecare frame de spectru se calculeaza o linie normalizata:
+
+$$
+W[t, k] = \operatorname{clip} \left( \frac{P_{dB}[t, k] - F}{C - F}, 0, 1 \right)
+$$
+
+unde:
+- $F$ este nivelul de podea al zgomotului;
+- $C$ este nivelul superior folosit pentru contrast;
+- `clip` limiteaza valoarea in intervalul `[0, 1]`.
+
+In interfata, `WaterfallView` pastreaza ultimele frame-uri intr-o lista si construieste o matrice cu `np.vstack`. Aceasta matrice este trimisa catre `pyqtgraph.ImageItem`, care o afiseaza ca imagine colorata.
+
+Pentru ca imaginea sa nu sara brusc atunci cand nivelul semnalului se schimba, podeaua si plafonul sunt estimate din percentile si netezite in timp:
+
+$$
+F_{nou} = F_{vechi} + \alpha(F_{masurat} - F_{vechi})
+$$
+
+$$
+C_{nou} = C_{vechi} + \alpha(C_{masurat} - C_{vechi})
+$$
+
+In implementare, $\alpha = 0.08$, podeaua foloseste percentila 5, iar plafonul foloseste percentila 99.
+
+### 2.12. Media mobila si netezirea semnalului
+Media mobila este un filtru simplu de netezire. Fiecare esantion este inlocuit cu media unui grup local de esantioane:
+
+$$
+y[n] = \frac{1}{M} \sum_{i=0}^{M-1} x[n-i]
+$$
+
+unde $M$ este dimensiunea ferestrei. Acest filtru reduce variatiile rapide si poate fi interpretat ca un filtru trece-jos simplu. In proiect apare ca `moving_average` si `lowpass_moving_avg`.
+
+O utilizare practica este estimarea benzii ocupate: spectrul de putere este netezit pentru a reduce varfurile izolate, apoi se cauta zona in care puterea depaseste un prag.
+
+### 2.13. Eliminarea componentei DC
+Componenta DC este media semnalului. In audio sau in demodulare, aceasta componenta poate produce offset si poate consuma inutil dinamica semnalului. Pentru eliminarea ei se scade media:
+
+$$
+y[n] = x[n] - \mu_x
+$$
+
+unde:
+
+$$
+\mu_x = \frac{1}{N} \sum_{n=0}^{N-1} x[n]
+$$
+
+In demodularea AM, eliminarea DC este importanta deoarece detectia de anvelopa produce o valoare strict pozitiva. Fara eliminarea mediei, semnalul audio ar fi deplasat fata de zero.
+
+### 2.14. Normalizarea RMS
+RMS, prescurtare de la Root Mean Square, masoara nivelul eficace al unui semnal. Pentru un bloc de esantioane, valoarea RMS este:
+
+$$
+x_{RMS} = \sqrt{\frac{1}{N} \sum_{n=0}^{N-1} |x[n]|^2}
+$$
+
+Normalizarea RMS imparte semnalul la aceasta valoare:
+
+$$
+y[n] = \frac{x[n]}{x_{RMS} + \epsilon}
+$$
+
+Termenul $\epsilon$ evita impartirea la zero. Aceasta normalizare pastreaza forma semnalului, dar aduce nivelul sau mediu la o scara comparabila intre blocuri diferite.
+
+In pipeline-ul audio se foloseste o varianta adaptiva: se calculeaza RMS-ul blocului curent, apoi se ajusteaza treptat un castig astfel incat semnalul sa se apropie de un nivel tinta. Castigul dorit este:
+
+$$
+G_{dorit} = \min \left( \frac{RMS_{tinta}}{RMS_{curent} + \epsilon}, G_{max} \right)
+$$
+
+Iar castigul aplicat este netezit in timp:
+
+$$
+G_{nou} = G_{vechi} + \beta(G_{dorit} - G_{vechi})
+$$
+
+Aceasta abordare evita schimbari bruste de volum intre blocuri succesive.
+
+### 2.15. Estimarea benzii ocupate
+Pentru a aproxima zona din spectru in care exista semnal util, aplicatia poate estima banda ocupata. Procesul este:
+- se calculeaza FFT-ul semnalului;
+- se obtine spectrul de putere;
+- spectrul este netezit cu o medie mobila;
+- se alege un prag pe baza unei percentile;
+- se cauta primul si ultimul bin care depasesc pragul.
+
+Frecventele corespunzatoare acestor binuri definesc marginile benzii:
+
+$$
+B = f_{max} - f_{min}
+$$
+
+iar offset-ul centrului este:
+
+$$
+f_{offset} = \frac{f_{min} + f_{max}}{2}
+$$
+
+Aceasta estimare nu este o masurare perfecta a canalului, dar este utila pentru analiza vizuala si pentru alegerea unei regiuni aproximative de procesare.
 
 ## 3. Structura proiectului
 ```text
