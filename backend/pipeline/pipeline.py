@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.signal import butter, lfilter, lfilter_zi, sosfilt, sosfilt_zi
+from scipy.signal import butter, iirnotch, lfilter, lfilter_zi, sosfilt, sosfilt_zi
 
 from backend.demodulare.am import demodulate_am
 from backend.demodulare.fm import demodulate_fm
@@ -20,6 +20,10 @@ AUDIO_DC_BLOCKER_R = 0.995
 AUDIO_TARGET_RMS = 0.12
 AUDIO_MAX_GAIN = 8.0
 AUDIO_LIMIT_LEVEL = 0.9
+FM_DEEMPHASIS_TAU = 75e-6
+FM_AUDIO_HIGHPASS = 60.0
+FM_STEREO_PILOT_FREQ = 19_000.0
+FM_STEREO_PILOT_Q = 35.0
 
 
 class SDRPipeline:
@@ -226,15 +230,21 @@ class SDRPipeline:
             )
 
         state = self._audio_filter_state
-        filtered, state["lowpass_zi"] = sosfilt(
-            state["lowpass_sos"],
+        cleaned, state["highpass_zi"] = sosfilt(
+            state["highpass_sos"],
             samples,
-            zi=state["lowpass_zi"],
+            zi=state["highpass_zi"],
+        )
+        cleaned, state["pilot_notch_zi"] = lfilter(
+            state["pilot_notch_b"],
+            state["pilot_notch_a"],
+            cleaned,
+            zi=state["pilot_notch_zi"],
         )
         deemphasized, state["deemphasis_zi"] = lfilter(
             state["deemphasis_b"],
             state["deemphasis_a"],
-            filtered,
+            cleaned,
             zi=state["deemphasis_zi"],
         )
         return deemphasized
@@ -288,19 +298,26 @@ class SDRPipeline:
 
     def _create_fm_audio_filter_state(self, audio_rate, initial_sample):
         nyquist = audio_rate / 2.0
-        cutoff = min(15_000.0, nyquist * 0.85)
-        normalized_cutoff = cutoff / nyquist
-        lowpass_sos = butter(5, normalized_cutoff, btype="lowpass", output="sos")
+        highpass_cutoff = min(FM_AUDIO_HIGHPASS / nyquist, 0.95)
+        highpass_sos = butter(2, highpass_cutoff, btype="highpass", output="sos")
 
-        tau = 50e-6
-        alpha = np.exp(-1.0 / (audio_rate * tau))
+        notch_freq = min(FM_STEREO_PILOT_FREQ, nyquist * 0.95)
+        notch_b, notch_a = iirnotch(
+            notch_freq / nyquist,
+            FM_STEREO_PILOT_Q,
+        )
+
+        alpha = np.exp(-1.0 / (audio_rate * FM_DEEMPHASIS_TAU))
         deemphasis_b = [1.0 - alpha]
         deemphasis_a = [1.0, -alpha]
 
         return {
             "config": ("fm", audio_rate),
-            "lowpass_sos": lowpass_sos,
-            "lowpass_zi": sosfilt_zi(lowpass_sos) * initial_sample,
+            "highpass_sos": highpass_sos,
+            "highpass_zi": sosfilt_zi(highpass_sos) * initial_sample,
+            "pilot_notch_b": notch_b,
+            "pilot_notch_a": notch_a,
+            "pilot_notch_zi": lfilter_zi(notch_b, notch_a) * initial_sample,
             "deemphasis_b": deemphasis_b,
             "deemphasis_a": deemphasis_a,
             "deemphasis_zi": lfilter_zi(deemphasis_b, deemphasis_a) * initial_sample,
