@@ -136,10 +136,13 @@ class ControlsPanel(QWidget):
 
         self.audio_check = QCheckBox("Enable audio")
         self.audio_check.setChecked(True)
+        self.recording_check = QCheckBox("Record WAV")
+        self.recording_check.setChecked(False)
 
         demod_layout.addRow("Mode", self.mode_combo)
         demod_layout.addRow("FFT size", self.fft_spin)
         demod_layout.addRow("", self.audio_check)
+        demod_layout.addRow("", self.recording_check)
 
         buttons = QHBoxLayout()
         self.start_button = QPushButton("Start")
@@ -172,6 +175,7 @@ class ControlsPanel(QWidget):
             self.mode_combo,
             self.fft_spin,
             self.audio_check,
+            self.recording_check,
             self.sweep_check,
             self.sweep_start_spin,
             self.sweep_stop_spin,
@@ -204,6 +208,7 @@ class ControlsPanel(QWidget):
             "demodulation_mode": self.mode_combo.currentText(),
             "fft_size": self.fft_spin.value(),
             "audio_enabled": self.audio_check.isChecked(),
+            "recording_enabled": self.recording_check.isChecked(),
             "sweep_enabled": self.sweep_check.isChecked(),
             "sweep_start_frequency": self.sweep_start_spin.value(),
             "sweep_stop_frequency": self.sweep_stop_spin.value(),
@@ -234,6 +239,7 @@ class ControlsPanel(QWidget):
         self.sample_rate_spin.setEnabled(not running)
         self.gain_spin.setEnabled(not running)
         self.fft_spin.setEnabled(True)
+        self.recording_check.setEnabled(True)
         self.sweep_check.setEnabled(True)
         self.sweep_start_spin.setEnabled(True)
         self.sweep_stop_spin.setEnabled(True)

@@ -412,9 +412,10 @@ Contine contractul pentru receptoare si implementarea pentru RTL-SDR.
 - `RtlSdrReceiver` - implementarea concreta pentru dongle RTL-SDR.
 
 ### 4.5. `Backend/Audio`
-Contine iesirea audio.
+Contine iesirea si inregistrarea audio.
 
 - `AudioOutput` - trimite esantioanele audio catre placa de sunet folosind `sounddevice`.
+- `AudioRecorder` - salveaza esantioanele audio demodulate intr-un fisier WAV mono.
 
 ### 4.6. `Backend/Pipeline`
 Contine coordonarea fluxului SDR.
@@ -445,7 +446,7 @@ IQBlock
    |
    v
 SDRPipeline
-   |-- demodulare AM/FM -> AudioBlock -> AudioOutput
+   |-- demodulare AM/FM -> AudioBlock -> AudioOutput / AudioRecorder
    |
    `-- FFT + normalizare -> SpectrumFrame -> Spectrum/Waterfall UI
 ```
@@ -520,6 +521,7 @@ Interfata permite:
 - alegerea modului de demodulare AM/FM;
 - modificarea dimensiunii FFT;
 - activarea iesirii audio;
+- inregistrarea audio-ului demodulat in fisiere WAV in folderul `recordings/`;
 - vizualizarea spectrului si waterfall-ului in timp real.
 
 ## 10. Probleme intampinate recent si investigatii
@@ -583,6 +585,7 @@ Pasi ramasi de verificat:
 - Iesire audio prin `sounddevice`.
 - Pipeline SDR pentru procesarea unui frame complet.
 - Interfata grafica desktop cu panou de control, spectrum view si waterfall view.
+- Inregistrare WAV pentru semnalul demodulat, inclusiv cand este activa regiunea de izolare.
 
 ## 12. Testare
 Proiectul include teste automate `pytest` pentru parti DSP, demodulare si pipeline cu sursa sintetica. Rulare:

@@ -6,7 +6,9 @@ __pycache__/
 # Local SDR driver/runtime artifacts
 .tmp-rtlsdr-driver/
 dll/
+recordings/
 sdr_error.log
+test/
 
 # C extensions
 *.so

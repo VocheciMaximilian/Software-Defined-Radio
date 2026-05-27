@@ -5,6 +5,7 @@ from PySide6.QtCore import QObject, QThread, Signal
 from PySide6.QtWidgets import QApplication
 
 from backend.audio.audio_output import AudioOutput
+from backend.audio.audio_recorder import AudioRecorder
 from backend.pipeline.pipeline import SDRPipeline
 from backend.receiver.config import ReceiverConfig
 from backend.receiver.rtl_sdr_receiver import RtlSdrReceiver
@@ -16,6 +17,8 @@ from frontend.main_window import MainWindow
 class SDRPipelineWorker(QThread):
     frame_ready = Signal(object)
     frequency_changed = Signal(float)
+    recording_started = Signal(str)
+    recording_stopped = Signal(str, int)
     started_ok = Signal()
     stopped = Signal()
     error = Signal(str, object, str)
@@ -28,6 +31,7 @@ class SDRPipelineWorker(QThread):
         self._settings_lock = Lock()
         self._receiver = None
         self._audio_output = None
+        self._audio_recorder = None
         self._pipeline = None
         self._active_frequency = None
         self._sweep_frequency = None
@@ -54,6 +58,7 @@ class SDRPipelineWorker(QThread):
 
                 self._apply_settings()
                 frame = self._pipeline.process_once()
+                self._record_audio(frame.audio)
                 self.frame_ready.emit(frame)
                 self._advance_sweep()
         except Exception as exc:
@@ -95,6 +100,7 @@ class SDRPipelineWorker(QThread):
             settings["isolation_low_offset"],
             settings["isolation_high_offset"],
         )
+        self._sync_recorder(settings)
 
     def _apply_settings(self):
         with self._settings_lock:
@@ -120,6 +126,8 @@ class SDRPipelineWorker(QThread):
         elif self._audio_output is None:
             self._audio_output = AudioOutput(self._config.audio_sample_rate)
             self._pipeline.audio_output = self._audio_output
+
+        self._sync_recorder(settings)
 
     def _create_receiver(self, source, receiver_config):
         if source == "synthetic":
@@ -167,7 +175,30 @@ class SDRPipelineWorker(QThread):
             self._audio_output.close()
             self._audio_output = None
 
+    def _sync_recorder(self, settings):
+        should_record = settings["recording_enabled"] and not settings["sweep_enabled"]
+
+        if should_record and self._audio_recorder is None:
+            self._audio_recorder = AudioRecorder(self._config.audio_sample_rate)
+            self._audio_recorder.open()
+            self.recording_started.emit(str(self._audio_recorder.path))
+        elif not should_record:
+            self._close_recorder()
+
+    def _record_audio(self, audio_block):
+        if self._audio_recorder is not None:
+            self._audio_recorder.write(audio_block.samples)
+
+    def _close_recorder(self):
+        if self._audio_recorder is not None:
+            path = str(self._audio_recorder.path)
+            samples_written = self._audio_recorder.samples_written
+            self._audio_recorder.close()
+            self._audio_recorder = None
+            self.recording_stopped.emit(path, samples_written)
+
     def _cleanup(self):
+        self._close_recorder()
         self._close_audio()
 
         if self._receiver is not None:
@@ -213,6 +244,8 @@ class SDRApplicationController(QObject):
         )
         self.worker.frame_ready.connect(self.window.update_frame)
         self.worker.frequency_changed.connect(self.window.set_center_frequency)
+        self.worker.recording_started.connect(self._handle_recording_started)
+        self.worker.recording_stopped.connect(self._handle_recording_stopped)
         self.worker.error.connect(self._handle_worker_error)
         self.worker.stopped.connect(self._handle_worker_stopped)
         self.window.set_running(True)
@@ -234,6 +267,13 @@ class SDRApplicationController(QObject):
     def _handle_worker_error(self, prefix, exc, traceback_text):
         self.stop()
         self._report_error(prefix, exc, traceback_text)
+
+    def _handle_recording_started(self, path):
+        self.window.status.showMessage(f"Recording isolated audio to {path}")
+
+    def _handle_recording_stopped(self, path, samples_written):
+        if samples_written > 0:
+            self.window.status.showMessage(f"Saved isolated audio to {path}")
 
     def _handle_worker_stopped(self):
         worker = self.sender()
