@@ -8,6 +8,7 @@ from backend.audio.audio_output import AudioOutput
 from backend.pipeline.pipeline import SDRPipeline
 from backend.receiver.config import ReceiverConfig
 from backend.receiver.rtl_sdr_receiver import RtlSdrReceiver
+from backend.receiver.synthetic_receiver import SyntheticReceiver
 from config.current import current_config
 from frontend.main_window import MainWindow
 
@@ -73,7 +74,7 @@ class SDRPipelineWorker(QThread):
             block_size=self._config.receiver.block_size,
         )
 
-        self._receiver = RtlSdrReceiver(receiver_config)
+        self._receiver = self._create_receiver(settings["source"], receiver_config)
         self._receiver.open()
         self._active_frequency = float(settings["center_frequency"])
 
@@ -119,6 +120,12 @@ class SDRPipelineWorker(QThread):
         elif self._audio_output is None:
             self._audio_output = AudioOutput(self._config.audio_sample_rate)
             self._pipeline.audio_output = self._audio_output
+
+    def _create_receiver(self, source, receiver_config):
+        if source == "synthetic":
+            return SyntheticReceiver(receiver_config)
+
+        return RtlSdrReceiver(receiver_config)
 
     def _target_frequency(self, settings):
         if not settings["sweep_enabled"]:

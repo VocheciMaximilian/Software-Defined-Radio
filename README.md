@@ -188,10 +188,10 @@ $$
 R = 0.995
 $$
 
-Pentru FM broadcast se aplica si de-emphasis, un filtru trece-jos de ordinul intai care compenseaza pre-emphasis-ul folosit la transmisie. Constanta de timp folosita este:
+Pentru FM broadcast se aplica si de-emphasis, un filtru trece-jos de ordinul intai care compenseaza pre-emphasis-ul folosit la transmisie. In Europa, constanta de timp folosita este:
 
 $$
-\tau = 75 \mu s
+\tau = 50 \mu s
 $$
 
 La final, semnalul este convertit la `float32` si trimis catre `AudioOutput`.
@@ -512,6 +512,7 @@ python App.py
 Entrypoint-ul porneste interfata grafica si conecteaza controalele la backend-ul SDR. Frontend-ul nu instantiaza receiver-ul si nu cunoaste pipeline-ul; el doar emite setarile selectate si afiseaza frame-urile primite.
 
 Interfata permite:
+- alegerea sursei IQ: dongle `RTL-SDR` sau sursa `Synthetic` pentru testare fara hardware;
 - pornirea si oprirea pipeline-ului;
 - selectarea frecventei centrale;
 - selectarea ratei de esantionare;
@@ -584,7 +585,11 @@ Pasi ramasi de verificat:
 - Interfata grafica desktop cu panou de control, spectrum view si waterfall view.
 
 ## 12. Testare
-In prezent, proiectul nu include o suita de teste automate.
+Proiectul include teste automate `pytest` pentru parti DSP, demodulare si pipeline cu sursa sintetica. Rulare:
+
+```powershell
+python -m pytest
+```
 
 Verificarea manuala recomandata:
 - rularea verificarii de sintaxa pentru fisierele Python;

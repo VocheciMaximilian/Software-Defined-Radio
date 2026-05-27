@@ -4,3 +4,4 @@ pyrtlsdr[lib]
 sounddevice
 PySide6
 pyqtgraph
+pytest

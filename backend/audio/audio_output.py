@@ -71,7 +71,7 @@ class AudioOutput:
 
         audio = np.nan_to_num(audio, copy=False)
         audio = np.clip(audio, -1.0, 1.0).reshape(-1).copy()
-        audio = self._smooth_block_start(audio)
+        #audio = self._declick_block_start(audio)
         self._enqueue(audio)
 
         if self._stream is None and self._has_enough_prebuffer():
@@ -83,20 +83,16 @@ class AudioOutput:
         with self._lock:
             return self._queued_samples >= self._prebuffer_samples
 
-    def _smooth_block_start(self, audio):
+    def _declick_block_start(self, audio):
         if audio.size == 0:
             return audio
 
         fade_samples = min(DECLICK_SAMPLES, audio.size)
 
         if fade_samples > 1:
-            bridge = np.linspace(
-                self._last_enqueued_sample,
-                audio[fade_samples - 1],
-                fade_samples,
-                dtype=np.float32,
-            )
-            audio[:fade_samples] = bridge
+            discontinuity = self._last_enqueued_sample - float(audio[0])
+            fade = np.linspace(1.0, 0.0, fade_samples, dtype=np.float32)
+            audio[:fade_samples] += discontinuity * fade
 
         self._last_enqueued_sample = float(audio[-1])
         return audio

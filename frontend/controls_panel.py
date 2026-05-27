@@ -43,6 +43,10 @@ class ControlsPanel(QWidget):
         self.frequency_spin.setSuffix(" Hz")
         self.frequency_spin.setValue(self._config.receiver.center_frequency)
 
+        self.source_combo = QComboBox()
+        self.source_combo.addItem("RTL-SDR", "rtl_sdr")
+        self.source_combo.addItem("Synthetic", "synthetic")
+
         self.sample_rate_spin = QDoubleSpinBox()
         self.sample_rate_spin.setRange(250_000, 3_200_000)
         self.sample_rate_spin.setDecimals(0)
@@ -57,6 +61,7 @@ class ControlsPanel(QWidget):
         self.gain_spin.setSuffix(" dB")
         self.gain_spin.setValue(float(self._config.receiver.gain))
 
+        frequency_layout.addRow("Source", self.source_combo)
         frequency_layout.addRow("Frequency", self.frequency_spin)
         frequency_layout.addRow("Sample rate", self.sample_rate_spin)
         frequency_layout.addRow("Gain", self.gain_spin)
@@ -161,6 +166,7 @@ class ControlsPanel(QWidget):
     def _connect_signals(self):
         widgets = [
             self.frequency_spin,
+            self.source_combo,
             self.sample_rate_spin,
             self.gain_spin,
             self.mode_combo,
@@ -192,6 +198,7 @@ class ControlsPanel(QWidget):
     def current_settings(self):
         return {
             "center_frequency": self.frequency_spin.value(),
+            "source": self.source_combo.currentData(),
             "sample_rate": self.sample_rate_spin.value(),
             "gain": self.gain_spin.value(),
             "demodulation_mode": self.mode_combo.currentText(),
@@ -223,6 +230,7 @@ class ControlsPanel(QWidget):
         self.start_button.setEnabled(not running)
         self.stop_button.setEnabled(running)
         self.frequency_spin.setEnabled(True)
+        self.source_combo.setEnabled(not running)
         self.sample_rate_spin.setEnabled(not running)
         self.gain_spin.setEnabled(not running)
         self.fft_spin.setEnabled(True)
