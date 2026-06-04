@@ -1,16 +1,18 @@
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QPushButton,
     QSizePolicy,
-    QSplitter,
     QStatusBar,
     QVBoxLayout,
     QWidget,
 )
 
+from frontend.audio_diagnostics_dialog import AudioDiagnosticsDialog
 from frontend.controls_panel import ControlsPanel
+from frontend.receiver_controls_dialog import ReceiverControlsDialog
 from frontend.spectrum_view import SpectrumView
 from frontend.waterfall_view import WaterfallView
 
@@ -19,6 +21,7 @@ class MainWindow(QMainWindow):
     start_requested = Signal(dict)
     stop_requested = Signal()
     settings_changed = Signal(dict)
+    audio_diagnostics_reset_requested = Signal()
 
     def __init__(self, config, parent=None):
         super().__init__(parent)
@@ -26,6 +29,8 @@ class MainWindow(QMainWindow):
         self.settings = {}
         self.is_running = False
         self.frames_processed = 0
+        self.audio_telemetry = None
+        self.audio_diagnostics_dialog = None
 
         self._build_ui()
         self._apply_style()
@@ -38,6 +43,9 @@ class MainWindow(QMainWindow):
         self.controls.settings_changed.connect(self._on_settings_changed)
         self.controls.start_requested.connect(self._emit_start_requested)
         self.controls.stop_requested.connect(self.stop_requested)
+        self.controls.audio_diagnostics_requested.connect(
+            self.show_audio_diagnostics
+        )
 
         self.spectrum_view = SpectrumView()
         self.spectrum_view.frequency_offset_selected.connect(
@@ -50,6 +58,11 @@ class MainWindow(QMainWindow):
 
         self.frequency_label = QLabel("100.000.000 Hz")
         self.frequency_label.setObjectName("frequencyDisplay")
+        self.controls_button = QPushButton("\u2630")
+        self.controls_button.setObjectName("controlsMenuButton")
+        self.controls_button.setToolTip("Open or hide receiver controls")
+        self.controls_button.setCheckable(True)
+        self.controls_button.clicked.connect(self._set_controls_window_visible)
         self.state_label = QLabel("Stopped")
         self.state_label.setObjectName("stateBadge")
         self.mode_label = QLabel("FM")
@@ -66,6 +79,7 @@ class MainWindow(QMainWindow):
         header = QWidget()
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(14, 10, 14, 8)
+        header_layout.addWidget(self.controls_button)
         header_layout.addWidget(self.frequency_label)
         header_layout.addStretch(1)
         header_layout.addWidget(self.state_label)
@@ -80,17 +94,26 @@ class MainWindow(QMainWindow):
         display_layout.addWidget(self.spectrum_view, 3)
         display_layout.addWidget(self.waterfall_view, 4)
 
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(self.controls)
-        splitter.addWidget(display)
-        splitter.setSizes([310, 970])
-        splitter.setCollapsible(0, False)
-
-        self.setCentralWidget(splitter)
+        self.setCentralWidget(display)
+        self._build_controls_window()
         self.status = QStatusBar()
         self.setStatusBar(self.status)
         self.status.showMessage("Ready")
         self._on_settings_changed(self.controls.current_settings())
+
+    def _build_controls_window(self):
+        self.controls_window = ReceiverControlsDialog(self.controls, self)
+        self.controls_window.visibility_changed.connect(
+            self.controls_button.setChecked
+        )
+
+    def _set_controls_window_visible(self, visible):
+        if visible:
+            self.controls_window.show()
+            self.controls_window.raise_()
+            self.controls_window.activateWindow()
+        else:
+            self.controls_window.hide()
 
     def _apply_style(self):
         self.setStyleSheet(
@@ -104,7 +127,11 @@ class MainWindow(QMainWindow):
 
             #controlsPanel {
                 background: #171d24;
-                border-right: 1px solid #2b3440;
+            }
+
+            #controlsScroll, #controlsScroll > QWidget > QWidget {
+                background: #171d24;
+                border: 0;
             }
 
             QGroupBox {
@@ -148,8 +175,57 @@ class MainWindow(QMainWindow):
                 background: #1a2028;
             }
 
+            #primaryAction {
+                background: #1f78a5;
+                border-color: #3092c1;
+            }
+
+            #primaryAction:hover {
+                background: #2789b8;
+            }
+
+            #secondaryAction {
+                background: transparent;
+                color: #bfcbd6;
+            }
+
+            #secondaryAction:hover {
+                background: #202b37;
+                color: #ffffff;
+            }
+
+            #controlsMenuButton {
+                min-width: 38px;
+                max-width: 38px;
+                min-height: 34px;
+                max-height: 34px;
+                padding: 0;
+                font-size: 18pt;
+            }
+
+            #controlsMenuButton:checked {
+                background: #31506e;
+            }
+
             QCheckBox {
                 spacing: 8px;
+            }
+
+            QScrollBar:vertical {
+                background: #12171d;
+                border: 0;
+                width: 10px;
+                margin: 0;
+            }
+
+            QScrollBar::handle:vertical {
+                background: #3a4653;
+                border-radius: 4px;
+                min-height: 28px;
+            }
+
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0;
             }
 
             #frequencyDisplay {
@@ -183,10 +259,8 @@ class MainWindow(QMainWindow):
             }
 
             #panelCaption {
-                color: #94a3b3;
+                color: #aeb8c3;
                 font-size: 9pt;
-                font-weight: 600;
-                text-transform: uppercase;
             }
 
             QStatusBar {
@@ -215,6 +289,7 @@ class MainWindow(QMainWindow):
         self.controls.set_running(running)
 
         self.frames_processed = 0
+        self.audio_telemetry = None
         self.state_label.setText("Running" if running else "Stopped")
         self.state_label.setStyleSheet(
             "background: #1c8f62;" if running else "background: #3a4250;"
@@ -222,13 +297,68 @@ class MainWindow(QMainWindow):
         if running:
             self.error_label.clear()
             self.error_label.setVisible(False)
-        self.status.showMessage("Running RTL-SDR" if running else "Stopped")
+        self.status.showMessage(
+            f"Running {self._source_label()}" if running else "Stopped"
+        )
 
     def update_frame(self, frame):
         self.frames_processed += 1
         self.spectrum_view.update_frame(frame.spectrum)
         self.waterfall_view.update_frame(frame.spectrum)
-        self.status.showMessage(f"Running RTL-SDR | Frames: {self.frames_processed}")
+        self._update_running_status()
+
+    def update_audio_telemetry(self, telemetry):
+        self.audio_telemetry = telemetry
+
+        if self.audio_diagnostics_dialog is not None:
+            self.audio_diagnostics_dialog.update_telemetry(telemetry)
+
+        self._update_running_status()
+
+    def show_audio_diagnostics(self):
+        if self.audio_diagnostics_dialog is None:
+            self.audio_diagnostics_dialog = AudioDiagnosticsDialog(self)
+            self.audio_diagnostics_dialog.reset_requested.connect(
+                self.audio_diagnostics_reset_requested.emit
+            )
+
+        self.audio_diagnostics_dialog.update_telemetry(self.audio_telemetry)
+        self.audio_diagnostics_dialog.show()
+        self.audio_diagnostics_dialog.raise_()
+        self.audio_diagnostics_dialog.activateWindow()
+
+    def _update_running_status(self):
+        if not self.is_running:
+            return
+
+        message = f"Running {self._source_label()} | Frames: {self.frames_processed}"
+
+        if self.audio_telemetry is not None:
+            if not self.audio_telemetry["enabled"]:
+                message += " | Audio: off"
+            else:
+                state = (
+                    "buffering"
+                    if self.audio_telemetry["is_prebuffering"]
+                    else "playing"
+                )
+                message += (
+                    f" | Audio: {state}"
+                    f" | Queue: {self.audio_telemetry['queued_seconds']:.3f} s"
+                    f" | Under: {self.audio_telemetry['underrun_count']}"
+                    f" | Over: {self.audio_telemetry['overrun_count']}"
+                    f" | PortAudio: {self.audio_telemetry['stream_status_count']}"
+                    f" | Loop max: "
+                    f"{self.audio_telemetry.get('max_loop_seconds', 0.0):.3f} s"
+                )
+
+        self.status.showMessage(message)
+
+    def _source_label(self):
+        if self.settings.get("source") == "synthetic":
+            return "Synthetic"
+
+        return "RTL-SDR"
 
     def set_center_frequency(self, center_frequency):
         self.frequency_label.setText(f"{center_frequency:,.0f} Hz".replace(",", "."))
@@ -261,5 +391,6 @@ class MainWindow(QMainWindow):
         self.status.showMessage(message)
 
     def closeEvent(self, event):
+        self.controls_window.close()
         self.stop_requested.emit()
         event.accept()

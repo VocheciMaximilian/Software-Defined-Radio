@@ -1,5 +1,6 @@
 import traceback
 from threading import Event, Lock
+from time import perf_counter
 
 from PySide6.QtCore import QObject, QThread, Signal
 from PySide6.QtWidgets import QApplication
@@ -7,6 +8,7 @@ from PySide6.QtWidgets import QApplication
 from backend.audio.audio_output import AudioOutput
 from backend.audio.audio_recorder import AudioRecorder
 from backend.pipeline.pipeline import SDRPipeline
+from backend.receiver.buffered_receiver import BufferedReceiver
 from backend.receiver.config import ReceiverConfig
 from backend.receiver.rtl_sdr_receiver import RtlSdrReceiver
 from backend.receiver.synthetic_receiver import SyntheticReceiver
@@ -16,12 +18,14 @@ from frontend.main_window import MainWindow
 
 class SDRPipelineWorker(QThread):
     frame_ready = Signal(object)
+    audio_telemetry_ready = Signal(dict)
     frequency_changed = Signal(float)
     recording_started = Signal(str)
     recording_stopped = Signal(str, int)
     started_ok = Signal()
     stopped = Signal()
     error = Signal(str, object, str)
+    UI_FRAME_INTERVAL = 4
 
     def __init__(self, settings, config, parent=None):
         super().__init__(parent)
@@ -36,6 +40,11 @@ class SDRPipelineWorker(QThread):
         self._active_frequency = None
         self._sweep_frequency = None
         self._sweep_params = None
+        self._frames_processed = 0
+        self._last_loop_seconds = 0.0
+        self._max_loop_seconds = 0.0
+        self._audio_samples_processed = 0
+        self._telemetry_started_at = perf_counter()
 
     def update_settings(self, settings):
         with self._settings_lock:
@@ -56,10 +65,24 @@ class SDRPipelineWorker(QThread):
                 if self._pipeline is None:
                     break
 
+                loop_start = perf_counter()
                 self._apply_settings()
-                frame = self._pipeline.process_once()
+                next_frame_index = self._frames_processed + 1
+                include_spectrum = next_frame_index % self.UI_FRAME_INTERVAL == 0
+                frame = self._pipeline.process_once(include_spectrum=include_spectrum)
                 self._record_audio(frame.audio)
-                self.frame_ready.emit(frame)
+                self._audio_samples_processed += frame.audio.samples.size
+                self._frames_processed += 1
+                self._last_loop_seconds = perf_counter() - loop_start
+                self._max_loop_seconds = max(
+                    self._max_loop_seconds,
+                    self._last_loop_seconds,
+                )
+
+                if include_spectrum:
+                    self.frame_ready.emit(frame)
+
+                self._emit_audio_telemetry()
                 self._advance_sweep()
         except Exception as exc:
             if not self._stop_requested.is_set():
@@ -77,17 +100,14 @@ class SDRPipelineWorker(QThread):
             sample_rate=settings["sample_rate"],
             gain=settings["gain"],
             block_size=self._config.receiver.block_size,
+            ppm_correction=settings["ppm_correction"],
         )
 
         self._receiver = self._create_receiver(settings["source"], receiver_config)
         self._receiver.open()
         self._active_frequency = float(settings["center_frequency"])
 
-        self._audio_output = (
-            AudioOutput(self._config.audio_sample_rate)
-            if settings["audio_enabled"]
-            else None
-        )
+        self._audio_output = self._create_audio_output(settings)
         self._pipeline = SDRPipeline(
             receiver=self._receiver,
             demodulation_mode=settings["demodulation_mode"],
@@ -124,7 +144,7 @@ class SDRPipelineWorker(QThread):
             self._close_audio()
             self._pipeline.audio_output = None
         elif self._audio_output is None:
-            self._audio_output = AudioOutput(self._config.audio_sample_rate)
+            self._audio_output = self._create_audio_output(settings)
             self._pipeline.audio_output = self._audio_output
 
         self._sync_recorder(settings)
@@ -133,7 +153,16 @@ class SDRPipelineWorker(QThread):
         if source == "synthetic":
             return SyntheticReceiver(receiver_config)
 
-        return RtlSdrReceiver(receiver_config)
+        return BufferedReceiver(RtlSdrReceiver(receiver_config))
+
+    def _create_audio_output(self, settings):
+        if not settings["audio_enabled"]:
+            return None
+
+        return AudioOutput(
+            self._config.audio_sample_rate,
+            output_device=settings["audio_output_device"],
+        )
 
     def _target_frequency(self, settings):
         if not settings["sweep_enabled"]:
@@ -189,6 +218,37 @@ class SDRPipelineWorker(QThread):
         if self._audio_recorder is not None:
             self._audio_recorder.write(audio_block.samples)
 
+    def reset_audio_diagnostics(self):
+        self._last_loop_seconds = 0.0
+        self._max_loop_seconds = 0.0
+        self._audio_samples_processed = 0
+        self._telemetry_started_at = perf_counter()
+
+        if self._audio_output is not None:
+            self._audio_output.reset_diagnostics()
+
+        self._emit_audio_telemetry(force=True)
+
+    def _emit_audio_telemetry(self, force=False):
+        if not force and self._frames_processed % 10 != 0:
+            return
+
+        if self._audio_output is None:
+            self.audio_telemetry_ready.emit({"enabled": False})
+            return
+
+        telemetry = self._audio_output.telemetry()
+        telemetry["enabled"] = True
+        telemetry["last_loop_seconds"] = self._last_loop_seconds
+        telemetry["max_loop_seconds"] = self._max_loop_seconds
+        elapsed = max(perf_counter() - self._telemetry_started_at, 1e-12)
+        telemetry["audio_production_rate"] = self._audio_samples_processed / elapsed
+
+        if hasattr(self._receiver, "queued_seconds"):
+            telemetry["iq_queue_seconds"] = self._receiver.queued_seconds
+
+        self.audio_telemetry_ready.emit(telemetry)
+
     def _close_recorder(self):
         if self._audio_recorder is not None:
             path = str(self._audio_recorder.path)
@@ -218,6 +278,9 @@ class SDRApplicationController(QObject):
         self.window.start_requested.connect(self.start)
         self.window.stop_requested.connect(self.stop)
         self.window.settings_changed.connect(self.update_settings)
+        self.window.audio_diagnostics_reset_requested.connect(
+            self.reset_audio_diagnostics
+        )
 
     def _report_error(self, prefix, exc, traceback_text=None):
         message = f"{prefix}: {exc}"
@@ -239,10 +302,9 @@ class SDRApplicationController(QObject):
             return
 
         self.worker = SDRPipelineWorker(settings, self.config, self)
-        self.worker.started_ok.connect(
-            lambda: self.window.status.showMessage("Running RTL-SDR")
-        )
+        self.worker.started_ok.connect(self.window._update_running_status)
         self.worker.frame_ready.connect(self.window.update_frame)
+        self.worker.audio_telemetry_ready.connect(self.window.update_audio_telemetry)
         self.worker.frequency_changed.connect(self.window.set_center_frequency)
         self.worker.recording_started.connect(self._handle_recording_started)
         self.worker.recording_stopped.connect(self._handle_recording_stopped)
@@ -263,6 +325,10 @@ class SDRApplicationController(QObject):
             self.worker.wait(1500)
 
         self.window.set_running(False)
+
+    def reset_audio_diagnostics(self):
+        if self.worker is not None:
+            self.worker.reset_audio_diagnostics()
 
     def _handle_worker_error(self, prefix, exc, traceback_text):
         self.stop()

@@ -79,5 +79,10 @@ class RtlSdrReceiver(Receiver):
     def _configure_device(self):
         self._sdr.sample_rate = int(self.config.sample_rate)
         self._sdr.center_freq = int(self.config.center_frequency)
+        ppm_correction = int(round(self.config.ppm_correction))
+
+        if ppm_correction != 0:
+            self._sdr.freq_correction = ppm_correction
+
         self._sdr.gain = self.config.gain
         self._sdr.read_samples(1024)

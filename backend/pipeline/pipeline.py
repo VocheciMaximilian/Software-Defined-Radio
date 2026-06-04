@@ -16,12 +16,14 @@ DEMODULATORS = {
 
 FM_DEMOD_SAMPLE_RATE = 240_000
 CHANNEL_DOWNSAMPLE_FACTORS = (10, 8, 6, 5, 4, 3, 2, 1)
+FM_IQ_DC_BLOCKER_R = 0.995
 AUDIO_DC_BLOCKER_R = 0.995
 AUDIO_TARGET_RMS = 0.12
 AUDIO_MAX_GAIN = 8.0
 AUDIO_LIMIT_LEVEL = 0.9
 FM_DEEMPHASIS_TAU = 50e-6
 FM_AUDIO_HIGHPASS = 60.0
+FM_AUDIO_LOWPASS = 15_000.0
 FM_STEREO_PILOT_FREQ = 19_000.0
 FM_STEREO_PILOT_Q = 35.0
 
@@ -48,6 +50,7 @@ class SDRPipeline:
         self._audio_resampler = None
         self._channel_resampler = None
         self._frequency_shift_state = None
+        self._fm_iq_dc_blocker_state = None
         self._fm_last_sample = None
         self.isolation_enabled = False
         self.isolation_low_offset = -100_000.0
@@ -58,7 +61,7 @@ class SDRPipeline:
         self.isolation_low_offset = float(low_offset)
         self.isolation_high_offset = float(high_offset)
 
-    def process_once(self):
+    def process_once(self, include_spectrum=True):
         iq_block = self.receiver.read_block()
         demodulator = DEMODULATORS[self.demodulation_mode]
         demod_samples, demod_sample_rate = self._prepare_demodulation_input(iq_block)
@@ -81,21 +84,39 @@ class SDRPipeline:
         if self.audio_output is not None:
             self.audio_output.play(audio_block.samples)
 
-        power_db = power_spectrum_db(iq_block.samples, self.fft_size)
-        spectrum = SpectrumFrame.create(
-            power_db,
-            normalize_spectrum(power_db),
-            iq_block.sample_rate,
-            iq_block.center_frequency,
-        )
+        spectrum = None
+
+        if include_spectrum:
+            power_db = power_spectrum_db(iq_block.samples, self.fft_size)
+            spectrum = SpectrumFrame.create(
+                power_db,
+                normalize_spectrum(power_db),
+                iq_block.sample_rate,
+                iq_block.center_frequency,
+            )
 
         return PipelineFrame(iq=iq_block, audio=audio_block, spectrum=spectrum)
 
     def _prepare_demodulation_input(self, iq_block):
+        samples = iq_block.samples
+
+        if self.demodulation_mode == "fm":
+            samples = self._block_fm_iq_dc(samples, iq_block.sample_rate)
+        else:
+            self._fm_iq_dc_blocker_state = None
+
         if not self.isolation_enabled:
-            self._channel_resampler = None
             self._frequency_shift_state = None
-            return iq_block.samples, iq_block.sample_rate
+
+            if self.demodulation_mode != "fm":
+                self._channel_resampler = None
+                return samples, iq_block.sample_rate
+
+            target_rate = min(float(FM_DEMOD_SAMPLE_RATE), iq_block.sample_rate)
+            return (
+                self._resample_channel(samples, iq_block.sample_rate, target_rate),
+                target_rate,
+            )
 
         low_offset = self.isolation_low_offset
         high_offset = self.isolation_high_offset
@@ -108,11 +129,11 @@ class SDRPipeline:
         if bandwidth <= 0:
             self._channel_resampler = None
             self._frequency_shift_state = None
-            return iq_block.samples, iq_block.sample_rate
+            return samples, iq_block.sample_rate
 
         center_offset = (low_offset + high_offset) / 2.0
         centered_samples = self._shift_frequency_continuous(
-            iq_block.samples,
+            samples,
             center_offset,
             iq_block.sample_rate,
         )
@@ -127,6 +148,29 @@ class SDRPipeline:
             target_rate,
         )
         return filtered_samples, target_rate
+
+    def _block_fm_iq_dc(self, samples, sample_rate):
+        samples = np.asarray(samples, dtype=np.complex128)
+
+        if samples.size == 0:
+            return samples.copy()
+
+        config = float(sample_rate)
+        b = [1.0, -1.0]
+        a = [1.0, -FM_IQ_DC_BLOCKER_R]
+
+        if (
+            self._fm_iq_dc_blocker_state is None
+            or self._fm_iq_dc_blocker_state["config"] != config
+        ):
+            self._fm_iq_dc_blocker_state = {
+                "config": config,
+                "zi": lfilter_zi(b, a) * samples[0],
+            }
+
+        state = self._fm_iq_dc_blocker_state
+        filtered, state["zi"] = lfilter(b, a, samples, zi=state["zi"])
+        return filtered
 
     def _channel_sample_rate(self, source_rate, bandwidth):
         desired_rate = max(bandwidth * 1.2, self.audio_sample_rate * 2.0)
@@ -241,6 +285,11 @@ class SDRPipeline:
             cleaned,
             zi=state["pilot_notch_zi"],
         )
+        cleaned, state["lowpass_zi"] = sosfilt(
+            state["lowpass_sos"],
+            cleaned,
+            zi=state["lowpass_zi"],
+        )
         deemphasized, state["deemphasis_zi"] = lfilter(
             state["deemphasis_b"],
             state["deemphasis_a"],
@@ -306,6 +355,8 @@ class SDRPipeline:
             notch_freq / nyquist,
             FM_STEREO_PILOT_Q,
         )
+        lowpass_cutoff = min(FM_AUDIO_LOWPASS / nyquist, 0.95)
+        lowpass_sos = butter(4, lowpass_cutoff, btype="lowpass", output="sos")
 
         alpha = np.exp(-1.0 / (audio_rate * FM_DEEMPHASIS_TAU))
         deemphasis_b = [1.0 - alpha]
@@ -318,6 +369,8 @@ class SDRPipeline:
             "pilot_notch_b": notch_b,
             "pilot_notch_a": notch_a,
             "pilot_notch_zi": lfilter_zi(notch_b, notch_a) * initial_sample,
+            "lowpass_sos": lowpass_sos,
+            "lowpass_zi": sosfilt_zi(lowpass_sos) * initial_sample,
             "deemphasis_b": deemphasis_b,
             "deemphasis_a": deemphasis_a,
             "deemphasis_zi": lfilter_zi(deemphasis_b, deemphasis_a) * initial_sample,

@@ -7,7 +7,7 @@ from backend.signal.models import AudioBlock, IQBlock, SpectrumFrame
 class PipelineFrame:
     iq: IQBlock
     audio: AudioBlock
-    spectrum: SpectrumFrame
+    spectrum: SpectrumFrame | None
 
 
 @dataclass(frozen=True)

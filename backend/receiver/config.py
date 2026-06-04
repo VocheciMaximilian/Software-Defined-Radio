@@ -7,6 +7,7 @@ class ReceiverConfig:
     sample_rate: float = 1_024_000
     gain: float = 20.0
     block_size: int = 131_072
+    ppm_correction: float = 0.0
 
     def validate(self):
         if self.center_frequency <= 0:
